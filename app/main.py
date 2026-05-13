@@ -52,6 +52,12 @@ FIELD_DESCRIPTIONS: Dict[str, str] = {
     "Purpose": "The stated reason for the loan.",
 }
 
+FIELD_ORDER = [
+    "Age", "Job", "Housing", "Purpose",
+    "Credit amount", "Duration",
+    "Saving accounts", "Checking account",
+]
+
 
 def _load_cases() -> pd.DataFrame:
     if os.path.exists(CASES_FOR_STUDY_PATH):
@@ -98,7 +104,12 @@ def _ui_case_view(case_row: Dict[str, Any]) -> Dict[str, Any]:
     view.pop("case_id", None)
     for col in DROP_COLS_FOR_UI:
         view.pop(col, None)
-    return view
+
+    ordered = {k: view[k] for k in FIELD_ORDER if k in view}
+    for k, v in view.items():
+        if k not in ordered:
+            ordered[k] = v
+    return ordered
 
 
 def _features_for_model(case_row: Dict[str, Any]) -> Dict[str, Any]:
