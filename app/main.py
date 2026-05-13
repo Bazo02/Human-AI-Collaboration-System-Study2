@@ -43,13 +43,13 @@ app.secret_key = SECRET_KEY
 
 FIELD_DESCRIPTIONS: Dict[str, str] = {
     "Age": "The applicant's age in years.",
-    "Job": "The applicant's employment skill level.",
-    "Housing": "The applicant's housing situation (own, rent, or free).",
-    "Saving accounts": "The applicant's savings account balance (little, moderate, quite rich, or rich).",
-    "Checking account": "The applicant's checking account balance (little, moderate, or rich).",
-    "Credit amount": "The total amount of credit requested in euros.",
-    "Duration": "The requested loan repayment period in months.",
-    "Purpose": "The stated reason for the loan.",
+    "Job": "Employment skill level (unskilled non-resident, unskilled resident, skilled, or highly skilled). Higher skill generally indicates more stable income.",
+    "Housing": "Whether the applicant owns, rents, or lives in free housing (own, rent, or free).",
+    "Saving accounts": "Balance in savings account (little, moderate, quite rich, or rich). Higher savings reduce lending risk.",
+    "Checking account": "Balance in checking account (little, moderate, or rich). Higher balance indicates better liquidity.",
+    "Credit amount": "Total amount of credit requested in euros.",
+    "Duration": "Loan repayment period in months. Longer duration means higher total risk.",
+    "Purpose": "What the loan will be used for (e.g. car, furniture, education, business).",
 }
 
 FIELD_ORDER = [
