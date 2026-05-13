@@ -82,10 +82,15 @@ def _compute_shap_contributions(model, X_dict: Dict[str, Any]) -> List[Tuple[str
         explainer = shap.TreeExplainer(clf)
         shap_values = explainer.shap_values(X_trans)
 
-        if isinstance(shap_values, list) and len(shap_values) == 2:
+        # Handle both old and new SHAP output formats
+        if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+            # New SHAP format: (n_samples, n_features, n_classes)
+            values = shap_values[0, :, 1]
+        elif isinstance(shap_values, list) and len(shap_values) == 2:
+            # Old SHAP format: [class_0_array, class_1_array]
             values = shap_values[1][0]
         else:
-            values = shap_values[0]
+            values = np.array(shap_values).ravel()
 
         pairs = list(zip(feat_names, values.tolist()))
         pairs = [(f, v) for (f, v) in pairs if abs(v) > 1e-9]
