@@ -1,0 +1,157 @@
+<!-- templates/admin_dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+
+    <div style="display:flex; justify-content: space-between; align-items:center;">
+      <h1>Admin Dashboard</h1>
+      <a href="/admin/logout" class="small-text">Logout</a>
+    </div>
+
+    <p class="small-text">
+      <strong>Admin only:</strong> this page is for managing study data and viewing results.
+    </p>
+
+    <hr />
+
+    <h2>Quick Links</h2>
+    <div class="button-group">
+      <a href="/admin/results" class="btn-secondary">View Results</a>
+      <a href="/admin/download_db" class="btn-secondary">Download Database</a>
+      <a href="/admin/download_participant_summary" class="btn-secondary">Download Participant Summary</a>
+    </div>
+
+    <hr />
+
+    <h2>Database Status</h2>
+    <p class="small-text">
+      Row counts are retrieved from the SQLite database (<code>outputs/study.db</code>).
+    </p>
+
+    <div class="case-box">
+      <div class="case-item">
+        <span class="case-label">Participants rows:</span>
+        <span class="case-value">{{ counts.participants }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Decisions rows:</span>
+        <span class="case-value">{{ counts.decisions }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Events rows:</span>
+        <span class="case-value">{{ counts.events }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Surveys rows:</span>
+        <span class="case-value">{{ counts.surveys }}</span>
+      </div>
+    </div>
+
+    <div class="case-box" style="margin-top:12px;">
+      <div class="case-item">
+        <div class="case-label">What each log contains</div>
+        <div class="small-text" style="margin-top:6px;">
+          <strong>Participants:</strong> one row per participant with metadata, condition order, and completion status.<br/>
+          <strong>Decisions:</strong> one row per case decision (choice, correct/incorrect, time, AI seen/followed, AI recommendation/confidence/probability).<br/>
+          <strong>Events:</strong> interaction events (clicks, openings, page actions) with optional JSON payload.<br/>
+          <strong>Surveys:</strong> post-task questionnaire answers stored as JSON (one row per participant).
+        </div>
+      </div>
+    </div>
+
+    <hr />
+
+    <h2>Upload Database</h2>
+    <p class="small-text">
+      Uploads a database file and replaces the current <code>study.db</code>.
+    </p>
+
+    <div class="case-box">
+      <form action="/admin/upload_db" method="post" enctype="multipart/form-data">
+        <div class="survey-question">
+          <label for="db_file">Database file</label>
+          <input type="file" id="db_file" name="db_file" accept=".db" required />
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="btn-secondary">Upload Database</button>
+        </div>
+      </form>
+    </div>
+
+    <hr />
+
+    <h2>Delete Participant Data</h2>
+    <p class="small-text">
+      Deletes one participant's rows from <code>participants</code>, <code>decisions</code>, <code>events</code>, and <code>surveys</code>.
+    </p>
+
+    <div class="case-box">
+      {% if participants and participants|length > 0 %}
+        <table>
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Order</th>
+              <th>Completed</th>
+              <th>Age group</th>
+              <th>Background</th>
+              <th>AI familiarity</th>
+              <th>Finance familiarity</th>
+              <th>Decisions</th>
+              <th>Events</th>
+              <th>Surveys</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for participant in participants %}
+              <tr>
+                <td>{{ participant.participant_id }}</td>
+                <td>{{ participant.condition_order if participant.condition_order is defined and participant.condition_order not in [none, ""] else "N/A" }}</td>
+                <td>{{ "Yes" if participant.completed else "No" }}</td>
+                <td>{{ participant.age_group }}</td>
+                <td>{{ participant.background }}</td>
+                <td>{{ participant.ai_familiarity }}</td>
+                <td>{{ participant.finance_familiarity }}</td>
+                <td>{{ participant.decisions }}</td>
+                <td>{{ participant.events }}</td>
+                <td>{{ participant.surveys }}</td>
+                <td>
+                  <form action="/admin/delete_participant" method="post" style="margin:0;">
+                    <input type="hidden" name="participant_id" value="{{ participant.participant_id }}">
+                    <button type="submit" class="icon-btn" title="Delete this participant">✕</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="small-text">No participants found yet.</div>
+      {% endif %}
+    </div>
+
+    <hr />
+
+    <h2>Clear Database Tables</h2>
+    <p class="small-text">
+      Deletes all rows from all study tables (the database file stays).
+    </p>
+
+    <div class="case-box">
+      <form action="/admin/clear_all" method="post">
+        <button type="submit" class="btn-reject">Clear ALL study data</button>
+      </form>
+    </div>
+
+  </div>
+</body>
+</html>

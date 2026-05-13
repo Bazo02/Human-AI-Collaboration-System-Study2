@@ -1,0 +1,97 @@
+<!-- templates/survey.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Post-Study Questionnaire</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+
+    <h1>Post-Task Questionnaire</h1>
+
+    <p>
+        Please answer the following questions based on your experience
+        with the system you just used.
+    </p>
+
+    <form action="/survey" method="post">
+
+        <h2>Trust in the System</h2>
+        <div class="small-text">1 = Strongly disagree, 5 = Strongly agree</div>
+
+        <div class="survey-question">
+            <label>The system's recommendations were trustworthy.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q1" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="survey-question">
+            <label>I felt confident relying on the system during the task.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q2" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="survey-question">
+            <label>The system helped me understand the decision context.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q3" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <h2>System Usability (SUS)</h2>
+        <div class="small-text">1 = Strongly disagree, 5 = Strongly agree</div>
+
+        {% set sus_questions = [
+            "I think that I would like to use this system frequently.",
+            "I found the system unnecessarily complex.",
+            "I thought the system was easy to use.",
+            "I think that I would need the support of a technical person to use this system.",
+            "I found the various functions in this system were well integrated.",
+            "I thought there was too much inconsistency in this system.",
+            "I would imagine that most people would learn to use this system very quickly.",
+            "I found the system difficult to use.",
+            "I felt very confident using the system.",
+            "I needed to learn a lot of things before I could get going with this system."
+        ] %}
+
+        {% for q in range(0, sus_questions|length) %}
+        <div class="survey-question">
+            <label>{{ sus_questions[q] }}</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label>
+                    <input type="radio" name="sus_q{{ q+1 }}" value="{{ i }}" required> {{ i }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <h2>Additional Feedback</h2>
+
+        <div class="survey-question">
+            <label>Do you have any comments about the system?</label>
+            <textarea name="open_feedback" rows="4" style="width:100%; padding:8px;"></textarea>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn-secondary">Submit Responses</button>
+        </div>
+
+    </form>
+
+</div>
+</body>
+</html>

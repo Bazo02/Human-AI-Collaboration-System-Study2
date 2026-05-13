@@ -1,0 +1,80 @@
+<!-- templates/guidelines.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Guidelines</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="container">
+
+    <h1>Guidelines</h1>
+
+    <p>
+        Please read the guidelines below before starting. This ensures that all participants have the same understanding of the task.
+    </p>
+
+    <div class="case-box">
+        <h2>1) Your task</h2>
+        <p>
+            You will review loan applications and choose one decision for each case:
+            <strong>Approve</strong> or <strong>Reject</strong>.
+        </p>
+
+        <h2>2) What "Approve" and "Reject" mean</h2>
+        <p>
+            <strong>Approve</strong> means you believe the applicant should be granted the loan.
+            <strong>Reject</strong> means you believe the applicant should not be granted the loan.
+        </p>
+
+        <h2>3) Interpreting the applicant information</h2>
+        <p>
+            The application shows the same fields for each case. Some values may indicate higher or lower risk.
+            Use your own judgment based on the information shown.
+        </p>
+
+        <h2>4) AI support</h2>
+        <p>
+            One part of the study includes an <strong>AI Recommendation</strong> shown alongside each case.
+            The AI also displays the key factors behind its recommendation.
+            The AI provides advice only. <strong>You are responsible for the final decision.</strong>
+        </p>
+
+        <h2>5) AI confidence</h2>
+        <p>
+            The AI also shows a <strong>Confidence</strong> value (percentage). This represents how confident the AI is in its recommendation for that case.
+        </p>
+
+        <h2>6) Decision threshold</h2>
+        <p>
+            The AI converts its internal score into a suggested decision using a fixed threshold.
+            For this study, the threshold is <strong>{{ (approval_threshold * 100)|round(0) }}%</strong>.
+            This means that when the AI's estimated probability of approval is at least this threshold, it suggests <strong>Approve</strong>; otherwise it suggests <strong>Reject</strong>.
+        </p>
+
+        <h2>7) Take your time, but do not overthink</h2>
+        <p>
+            Work steadily and make the best decision you can for each case.
+        </p>
+    </div>
+
+    <form action="/guidelines" method="post">
+        <div class="survey-question">
+            <label>
+                <input type="checkbox" name="guidelines_ok" required>
+                I have read and understood the guidelines.
+            </label>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn-secondary">
+                Continue to the first case
+            </button>
+        </div>
+    </form>
+
+</div>
+</body>
+</html>

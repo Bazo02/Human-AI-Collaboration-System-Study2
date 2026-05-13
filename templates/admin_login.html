@@ -1,0 +1,30 @@
+<!-- templates/admin_login.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+  <h1>Admin Login</h1>
+
+  {% if error %}
+    <p style="color: #c0392b;"><strong>{{ error }}</strong></p>
+  {% endif %}
+
+  <form action="/admin" method="post">
+    <div class="survey-question">
+      <label>Password</label>
+      <input type="password" name="password" style="padding:8px; width: 280px;" required />
+    </div>
+
+    <div class="button-group">
+      <button type="submit" class="btn-secondary">Login</button>
+    </div>
+  </form>
+</div>
+</body>
+</html>

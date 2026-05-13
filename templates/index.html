@@ -1,0 +1,109 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loan Decision Study</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>Decision-Making Study</h1>
+
+        <p>
+            In this study, you will evaluate a series of loan applications.
+            For each application, your task is to decide whether the loan should be
+            <strong>Approved</strong> or <strong>Rejected</strong>.
+        </p>
+
+        
+        <p>
+            The study has two parts: you will complete
+            <strong>12 decisions without AI support</strong>
+            and <strong>12 decisions with AI support</strong>.
+            The order of the two parts may vary between participants.
+        </p>
+
+        <p>
+            Before the first case, you will be shown a brief <strong>Guidelines</strong> page describing how to interpret the case information and, in the second part of the study, how to interpret the AI recommendation and explanation.
+        </p>
+
+        <hr />
+
+        <form action="/start" method="post">
+            <div class="survey-question">
+                <label for="participant_id">Participant ID</label>
+                <input
+                    type="text"
+                    id="participant_id"
+                    name="participant_id"
+                    placeholder="Enter your ID (or leave blank)"
+                    style="padding: 8px; width: 250px;"
+                />
+            </div>
+
+            <div class="survey-question">
+                <label for="age_group">Age group</label>
+                <select id="age_group" name="age_group" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="18-24">18-24</option>
+                    <option value="25-34">25-34</option>
+                    <option value="35-44">35-44</option>
+                    <option value="45-54">45-54</option>
+                    <option value="55+">55+</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="background">Background</label>
+                <select id="background" name="background" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="Student">Student</option>
+                    <option value="Working professional">Working professional</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="ai_familiarity">Familiarity with AI tools</label>
+                <select id="ai_familiarity" name="ai_familiarity" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="None">None</option>
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="finance_familiarity">Familiarity with finance or loan decisions</label>
+                <select id="finance_familiarity" name="finance_familiarity" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="None">None</option>
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                </select>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-secondary">
+                    Start Study
+                </button>
+            </div>
+        </form>
+
+        <p class="small-text">
+            By continuing, you confirm that you understand the task and agree to participate in this study.
+        </p>
+
+        <hr />
+
+        <p class="small-text">
+          <strong>Admin only:</strong> view results and manage logs here:
+          <a href="/admin">Admin login</a>
+        </p>
+    </div>
+</body>
+</html>

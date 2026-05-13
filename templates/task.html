@@ -1,0 +1,106 @@
+<!-- templates/task.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Decision Task</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/app.js" defer></script>
+</head>
+<body>
+<div class="container">
+
+    <div class="section-title">
+        <h1>Loan Application Review</h1>
+        <a class="small-text" href="/guidelines">View guidelines</a>
+    </div>
+
+    <div class="progress-text">
+        Case {{ case_number }} of {{ total_cases }}
+    </div>
+
+    <input type="hidden" id="case-id" value="{{ case_id }}">
+
+    <div class="case-box">
+        <h2>Applicant Information</h2>
+
+        {% for key, value in case.items() %}
+            <div class="case-item">
+                <div>
+                    <span class="case-label">{{ key.replace('_', ' ')|title }}:</span>
+
+                    {% if key == "Credit amount" %}
+                        €{{ "{:,.0f}".format(value) }}
+                    {% elif key == "Duration" %}
+                        {{ value }} months
+                    {% elif key == "Age" %}
+                        {{ value }} years
+                    {% elif key == "Job" %}
+                        {% if value|int == 0 %}Unskilled (non-resident)
+                        {% elif value|int == 1 %}Unskilled (resident)
+                        {% elif value|int == 2 %}Skilled
+                        {% elif value|int == 3 %}Highly skilled
+                        {% else %}{{ value }}{% endif %}
+                    {% elif value == "Unknown" %}
+                        Not available
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+                </div>
+
+                {% if field_descriptions and key in field_descriptions %}
+                    <div class="small-text">
+                        {{ field_descriptions[key] }}
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    {% if condition == "ai" and ai %}
+    <div class="ai-panel" id="ai-panel">
+        <div class="ai-title">AI Recommendation</div>
+
+        <div
+            class="ai-recommendation"
+            id="ai-recommendation"
+            data-recommendation="{{ ai.recommendation }}"
+        >
+            Suggested decision: <strong>{{ ai.recommendation }}</strong>
+        </div>
+
+        <div class="ai-confidence">
+            Confidence: {{ (ai.confidence * 100)|round(1) }}%
+        </div>
+
+        {% if ai.explanation %}
+        <div class="ai-explanation-inline" id="ai-explanation">
+            <div class="ai-explanation-label">Key factors behind this recommendation:</div>
+            <ul>
+                {% for reason in ai.explanation %}
+                    <li>{{ reason }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="small-text" style="margin-top: 10px;">
+            Note: The AI provides advice, but you make the final decision.
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="button-group">
+        <button id="approve-btn" class="btn-approve">
+            Approve
+        </button>
+
+        <button id="reject-btn" class="btn-reject">
+            Reject
+        </button>
+    </div>
+
+</div>
+</body>
+</html>

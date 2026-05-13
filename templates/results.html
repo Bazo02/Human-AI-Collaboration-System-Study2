@@ -1,0 +1,372 @@
+<!-- templates/results.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Results</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+  <div style="display:flex; justify-content: space-between; align-items:center; gap: 16px; flex-wrap: wrap;">
+    <h1>Study Results</h1>
+    <div>
+      <a href="/admin/dashboard" class="small-text" style="margin-right:12px;">Admin Dashboard</a>
+      <a href="/admin/logout" class="small-text">Logout</a>
+    </div>
+  </div>
+
+  <p class="small-text">
+    <strong>Admin only:</strong> results are only visible after logging in.
+  </p>
+
+  <hr />
+
+  {% if not results.has_data %}
+    <p>{{ results.message }}</p>
+  {% else %}
+
+    <div class="button-group" style="margin-bottom: 20px;">
+      <a href="/admin/download_participant_summary" class="btn-secondary">Download Participant Summary CSV</a>
+    </div>
+
+    <div class="case-box" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Participants logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_participants }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Completed participants</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_completed_participants }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Decisions logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_decisions }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Surveys logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_surveys }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Events logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_events }}</div>
+      </div>
+    </div>
+
+    <h2>Overview</h2>
+    <div class="case-box" style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Baseline</th>
+            <th>AI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Accuracy</td>
+            <td>{{ "%.3f"|format(results.summary.accuracy_by_condition.baseline) if results.summary.accuracy_by_condition and 'baseline' in results.summary.accuracy_by_condition else "N/A" }}</td>
+            <td>{{ "%.3f"|format(results.summary.accuracy_by_condition.ai) if results.summary.accuracy_by_condition and 'ai' in results.summary.accuracy_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>Decision time (seconds)</td>
+            <td>{{ "%.3f"|format(results.summary.time_seconds_by_condition.baseline) if results.summary.time_seconds_by_condition and 'baseline' in results.summary.time_seconds_by_condition else "N/A" }}</td>
+            <td>{{ "%.3f"|format(results.summary.time_seconds_by_condition.ai) if results.summary.time_seconds_by_condition and 'ai' in results.summary.time_seconds_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>Trust score (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.trust_by_condition.ai) if results.summary.trust_by_condition and 'ai' in results.summary.trust_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>SUS score (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.sus_by_condition.ai) if results.summary.sus_by_condition and 'ai' in results.summary.sus_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI followed rate</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_followed_rate.ai) if results.summary.ai_followed_rate and 'ai' in results.summary.ai_followed_rate else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI confidence (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_confidence_by_condition.ai) if results.summary.ai_confidence_by_condition and 'ai' in results.summary.ai_confidence_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI approval probability (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_prob_approve_by_condition.ai) if results.summary.ai_prob_approve_by_condition and 'ai' in results.summary.ai_prob_approve_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>Explanation open rate</td>
+            <td>{{ "%.3f"|format(results.summary.explanation_open_rate_by_condition.baseline) if results.summary.explanation_open_rate_by_condition and 'baseline' in results.summary.explanation_open_rate_by_condition else "N/A" }}</td>
+            <td>{{ "%.3f"|format(results.summary.explanation_open_rate_by_condition.ai) if results.summary.explanation_open_rate_by_condition and 'ai' in results.summary.explanation_open_rate_by_condition else "N/A" }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Paired Comparisons</h2>
+    <div class="case-box" style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Comparison</th>
+            <th>n</th>
+            <th>Baseline mean</th>
+            <th>AI mean</th>
+            <th>Mean diff</th>
+            <th>t</th>
+            <th>p</th>
+            <th>Cohen's d<sub>z</sub></th>
+            <th>95% CI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set paired = results.summary.paired_tests %}
+          {% for key, label in [("accuracy", "Accuracy"), ("decision_time_seconds", "Decision time (s)")] %}
+            {% if paired and paired[key] %}
+              {% set r = paired[key] %}
+              <tr>
+                <td>{{ label }}</td>
+                <td>{{ r.n if r.n is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.baseline_mean) if r.baseline_mean is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.ai_mean) if r.ai_mean is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.mean_difference) if r.mean_difference is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.t_statistic) if r.t_statistic is not none else "N/A" }}</td>
+                <td>{{ "%.4f"|format(r.p_value) if r.p_value is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.cohens_dz) if r.cohens_dz is not none else "N/A" }}</td>
+                <td>
+                  {% if r.ci95_low is not none and r.ci95_high is not none %}
+                    [{{ "%.3f"|format(r.ci95_low) }}, {{ "%.3f"|format(r.ci95_high) }}]
+                  {% else %}N/A{% endif %}
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Accuracy Improvement Groups</h2>
+    {% set ag = results.summary.accuracy_improvement_groups %}
+    {% if ag %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>n</th>
+              <th>Mean baseline accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Improved (AI &gt; baseline)</td>
+              <td>{{ ag.n_improved if ag.n_improved is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(ag.improved_baseline_accuracy_mean) if ag.improved_baseline_accuracy_mean is not none else "N/A" }}</td>
+            </tr>
+            <tr>
+              <td>Worsened (AI &lt; baseline)</td>
+              <td>{{ ag.n_worsened if ag.n_worsened is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(ag.worsened_baseline_accuracy_mean) if ag.worsened_baseline_accuracy_mean is not none else "N/A" }}</td>
+            </tr>
+            <tr>
+              <td>Unchanged</td>
+              <td>{{ ag.n_unchanged if ag.n_unchanged is not none else "N/A" }}</td>
+              <td>N/A</td>
+            </tr>
+          </tbody>
+        </table>
+        {% if ag.group_ttest_t is not none %}
+          <p class="small-text" style="margin-top:10px;">
+            Independent t-test (improved vs worsened baseline accuracy):
+            t = {{ "%.3f"|format(ag.group_ttest_t) }},
+            p = {{ "%.4f"|format(ag.group_ttest_p) }}
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>AI-Followed Rate Distribution</h2>
+    {% set afd = results.summary.ai_followed_distribution %}
+    {% if afd %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr><th>Mean</th><th>SD</th><th>Min</th><th>Median</th><th>Max</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ "%.3f"|format(afd.mean) if afd.mean is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.sd) if afd.sd is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.min) if afd.min is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.median) if afd.median is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.max) if afd.max is not none else "N/A" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>Spearman: Trust vs AI-Followed Rate</h2>
+    {% set sp = results.summary.spearman_trust_vs_ai_followed %}
+    {% if sp %}
+      <div class="case-box">
+        <p>
+          r<sub>s</sub> = {{ "%.3f"|format(sp.rs) if sp.rs is not none else "N/A" }},
+          p = {{ "%.4f"|format(sp.p_value) if sp.p_value is not none else "N/A" }},
+          n = {{ sp.n if sp.n is not none else "N/A" }}
+        </p>
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>Counterbalancing: Subgroup Stats (AB vs BA)</h2>
+    {% set cb = results.summary.counterbalance_subgroup_stats %}
+    {% if cb and ('AB' in cb or 'BA' in cb) %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>n</th>
+              <th>Baseline accuracy</th>
+              <th>AI accuracy</th>
+              <th>Baseline time (s)</th>
+              <th>AI time (s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in ["AB", "BA"] %}
+              {% if order in cb %}
+                {% set g = cb[order] %}
+                <tr>
+                  <td>{{ order }}</td>
+                  <td>{{ g.n }}</td>
+                  <td>{{ "%.3f"|format(g.baseline_accuracy_mean) if g.baseline_accuracy_mean is defined and g.baseline_accuracy_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.ai_accuracy_mean) if g.ai_accuracy_mean is defined and g.ai_accuracy_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.baseline_avg_time_seconds_mean) if g.baseline_avg_time_seconds_mean is defined and g.baseline_avg_time_seconds_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.ai_avg_time_seconds_mean) if g.ai_avg_time_seconds_mean is defined and g.ai_avg_time_seconds_mean is not none else "N/A" }}</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if cb.order_effect_ai_accuracy_t is defined and cb.order_effect_ai_accuracy_t is not none %}
+          <p class="small-text" style="margin-top:10px;">
+            Order effect t-test (AI accuracy AB vs BA):
+            t = {{ "%.3f"|format(cb.order_effect_ai_accuracy_t) }},
+            p = {{ "%.4f"|format(cb.order_effect_ai_accuracy_p) }}
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet. Requires participants from both condition orders.</p>
+    {% endif %}
+
+    <h2>Participant Summary</h2>
+    {% if results.summary.participant_summary_preview and results.summary.participant_summary_preview|length > 0 %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Order</th>
+              <th>Completed</th>
+              <th>Baseline acc.</th>
+              <th>AI acc.</th>
+              <th>Baseline time</th>
+              <th>AI time</th>
+              <th>AI followed</th>
+              <th>AI confidence</th>
+              <th>Expl. opened</th>
+              <th>Trust</th>
+              <th>SUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in results.summary.participant_summary_preview %}
+              <tr>
+                <td>{{ row.participant_id if row.participant_id not in [none, ""] else "N/A" }}</td>
+                <td>{{ row.condition_order if row.condition_order is defined and row.condition_order not in [none, ""] else "N/A" }}</td>
+                <td>{{ "Yes" if row.completed else "No" }}</td>
+                <td>{{ row.baseline_accuracy if row.baseline_accuracy == row.baseline_accuracy else "N/A" }}</td>
+                <td>{{ row.ai_accuracy if row.ai_accuracy == row.ai_accuracy else "N/A" }}</td>
+                <td>{{ row.baseline_avg_time_seconds if row.baseline_avg_time_seconds == row.baseline_avg_time_seconds else "N/A" }}</td>
+                <td>{{ row.ai_avg_time_seconds if row.ai_avg_time_seconds == row.ai_avg_time_seconds else "N/A" }}</td>
+                <td>{{ row.ai_ai_followed_rate if row.ai_ai_followed_rate == row.ai_ai_followed_rate else "N/A" }}</td>
+                <td>{{ row.ai_avg_ai_confidence if row.ai_avg_ai_confidence == row.ai_avg_ai_confidence else "N/A" }}</td>
+                <td>{{ row.ai_explanation_open_rate if row.ai_explanation_open_rate == row.ai_explanation_open_rate else "N/A" }}</td>
+                <td>{{ row.trust_score if row.trust_score == row.trust_score else "N/A" }}</td>
+                <td>{{ row.sus_score if row.sus_score == row.sus_score else "N/A" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="small-text">No participant summary available yet.</p>
+    {% endif %}
+
+    <h2>Participant Comments</h2>
+    {% if results.summary.comments and results.summary.comments|length > 0 %}
+      <div class="case-box">
+        {% for item in results.summary.comments %}
+          <div class="case-item">
+            <div>
+              <span class="case-label">Participant:</span> {{ item.participant_id }}
+              <span class="small-text">({{ item.condition }})</span>
+            </div>
+            <div class="case-value" style="margin-top:6px;">{{ item.comment }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="small-text">No written comments submitted yet.</p>
+    {% endif %}
+
+    <h2>Plots</h2>
+    <div class="results-section">
+
+      {% for plot_key, plot_title, plot_desc in [
+        ("accuracy", "Accuracy", "Mean participant-level accuracy per condition."),
+        ("time", "Decision Time", "Mean participant-level decision time in seconds per condition."),
+        ("trust", "Trust Score", "Mean trust score (trust_q1–q3 averaged) across participants."),
+        ("sus", "SUS Score", "Mean SUS score (0–100) using the standard scoring formula."),
+        ("ai_followed", "AI Followed Rate", "Proportion of AI-condition cases where the participant matched the AI recommendation."),
+        ("ai_confidence", "AI Confidence", "Mean AI confidence score across AI-condition decisions."),
+        ("ai_prob_approve", "AI Approval Probability", "Mean model approval probability across AI-condition decisions."),
+        ("explanation_open_rate", "Explanation Open Rate", "Proportion of cases where the explanation panel was opened or viewed."),
+        ("ai_seen_rate", "AI Seen Rate", "Proportion of cases where the AI panel was present on screen."),
+        ("trust_vs_ai_followed", "Trust vs AI-Followed Rate", "Scatter plot of trust score against AI-followed rate per participant."),
+        ("accuracy_groups", "Baseline Accuracy: Improved vs Worsened", "Histogram comparing baseline accuracy for participants who improved vs worsened with AI assistance."),
+        ("counterbalance_accuracy", "AI Accuracy by Condition Order", "Mean AI-condition accuracy for AB vs BA groups."),
+        ("condition_order_distribution", "Condition Order Distribution", "Number of participants assigned to each condition order."),
+        ("age_group_distribution", "Age Group Distribution", "Number of participants per age group."),
+        ("background_distribution", "Background Distribution", "Number of participants per background category."),
+        ("ai_familiarity_distribution", "AI Familiarity Distribution", "Number of participants per AI familiarity level."),
+        ("finance_familiarity_distribution", "Finance Familiarity Distribution", "Number of participants per finance familiarity level.")
+      ] %}
+        {% if results.plots[plot_key] is defined and results.plots[plot_key] %}
+          <div class="results-card">
+            <h3>{{ plot_title }}</h3>
+            <img src="{{ results.plots[plot_key] }}" alt="{{ plot_title }} plot">
+            <p class="metric-desc">{{ plot_desc }}</p>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+    </div>
+  {% endif %}
+</div>
+</body>
+</html>
