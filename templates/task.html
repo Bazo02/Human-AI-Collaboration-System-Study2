@@ -29,7 +29,6 @@
             <div class="case-item">
                 <div>
                     <span class="case-label">{{ key.replace('_', ' ')|title }}:</span>
-
                     {% if key == "Credit amount" %}
                         €{{ "{:,.0f}".format(value) }}
                     {% elif key == "Duration" %}
@@ -48,12 +47,11 @@
                         {{ value }}
                     {% endif %}
                 </div>
-
-                {% if field_descriptions and key in field_descriptions %}
-                    <div class="small-text">
+                <div class="small-text" style="margin-top: 0;">
+                    {% if field_descriptions and key in field_descriptions %}
                         {{ field_descriptions[key] }}
-                    </div>
-                {% endif %}
+                    {% endif %}
+                </div>
             </div>
         {% endfor %}
     </div>
@@ -92,13 +90,8 @@
     {% endif %}
 
     <div class="button-group">
-        <button id="approve-btn" class="btn-approve">
-            Approve
-        </button>
-
-        <button id="reject-btn" class="btn-reject">
-            Reject
-        </button>
+        <button id="approve-btn" class="btn-approve">Approve</button>
+        <button id="reject-btn" class="btn-reject">Reject</button>
     </div>
 
 </div>
