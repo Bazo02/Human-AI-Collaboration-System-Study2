@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections import defaultdict
 from typing import Dict, Any, List, Tuple, Optional
 
 import numpy as np
@@ -26,21 +27,6 @@ def _load_model():
     return _MODEL
 
 
-def _prettify_feature_name(raw_name: str) -> str:
-    name = raw_name
-
-    if "__" in name:
-        name = name.split("__", 1)[1]
-
-    if "_" in name:
-        parts = name.split("_", 1)
-        col, rest = parts[0], parts[1]
-        if "cat__" in raw_name:
-            return f"{col.replace('_', ' ')}: {rest.replace('_', ' ')}"
-
-    return name.replace("_", " ")
-
-
 def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
     preprocess = None
     clf = None
@@ -52,6 +38,23 @@ def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
         clf = model
 
     return preprocess, clf
+
+
+def _aggregate_shap_by_feature(
+    feat_names: List[str],
+    values: np.ndarray,
+) -> List[Tuple[str, float]]:
+    aggregated: Dict[str, float] = defaultdict(float)
+
+    for fname, val in zip(feat_names, values.tolist()):
+        if abs(val) < 1e-9:
+            continue
+        if "unknown" in fname.lower():
+            continue
+        clean = fname.split("__", 1)[1] if "__" in fname else fname
+        aggregated[clean] += val
+
+    return sorted(aggregated.items(), key=lambda fv: abs(fv[1]), reverse=True)
 
 
 def _compute_shap_contributions(model, X_dict: Dict[str, Any]) -> List[Tuple[str, float]]:
@@ -70,11 +73,7 @@ def _compute_shap_contributions(model, X_dict: Dict[str, Any]) -> List[Tuple[str
             if hasattr(X_trans, "toarray"):
                 X_trans = X_trans.toarray()
             X_trans = np.array(X_trans)
-
-            if hasattr(preprocess, "get_feature_names_out"):
-                feat_names = list(preprocess.get_feature_names_out())
-            else:
-                feat_names = [f"f{i}" for i in range(X_trans.shape[1])]
+            feat_names = list(preprocess.get_feature_names_out()) if hasattr(preprocess, "get_feature_names_out") else [f"f{i}" for i in range(X_trans.shape[1])]
         else:
             X_trans = X_df.values
             feat_names = list(X_df.columns)
@@ -82,20 +81,14 @@ def _compute_shap_contributions(model, X_dict: Dict[str, Any]) -> List[Tuple[str
         explainer = shap.TreeExplainer(clf)
         shap_values = explainer.shap_values(X_trans)
 
-        # Handle both old and new SHAP output formats
         if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
-            # New SHAP format: (n_samples, n_features, n_classes)
             values = shap_values[0, :, 1]
         elif isinstance(shap_values, list) and len(shap_values) == 2:
-            # Old SHAP format: [class_0_array, class_1_array]
             values = shap_values[1][0]
         else:
             values = np.array(shap_values).ravel()
 
-        pairs = list(zip(feat_names, values.tolist()))
-        pairs = [(f, v) for (f, v) in pairs if abs(v) > 1e-9]
-        pairs.sort(key=lambda fv: abs(fv[1]), reverse=True)
-        return pairs
+        return _aggregate_shap_by_feature(feat_names, values)
 
     except ImportError:
         return _compute_importance_contributions(model, X_dict)
@@ -115,20 +108,23 @@ def _compute_importance_contributions(model, X_dict: Dict[str, Any]) -> List[Tup
 
         if preprocess is not None:
             X_trans = preprocess.transform(X_df)
-            if hasattr(preprocess, "get_feature_names_out"):
-                feat_names = list(preprocess.get_feature_names_out())
-            else:
-                feat_names = [f"f{i}" for i in range(X_trans.shape[1])]
+            feat_names = list(preprocess.get_feature_names_out()) if hasattr(preprocess, "get_feature_names_out") else [f"f{i}" for i in range(X_trans.shape[1])]
         else:
             feat_names = list(X_df.columns)
 
-        importances = clf.feature_importances_
-        pairs = list(zip(feat_names, importances.tolist()))
+        pairs = list(zip(feat_names, clf.feature_importances_.tolist()))
         pairs.sort(key=lambda fv: abs(fv[1]), reverse=True)
         return pairs
 
     except Exception:
         return []
+
+
+def _prettify_name(name: str) -> str:
+    parts = name.rsplit("_", 1)
+    if len(parts) == 2 and not parts[1].isdigit():
+        return parts[0].strip()
+    return name.strip()
 
 
 def _build_explanation(
@@ -151,7 +147,7 @@ def _build_explanation(
         filtered = contribs
 
     for f, c in filtered[:max_items]:
-        nice = _prettify_feature_name(str(f))
+        nice = _prettify_name(f)
         if recommendation == "Approve":
             reasons.append(f"{nice} {label}" if c >= 0 else f"{nice} slightly reduced approval support")
         else:

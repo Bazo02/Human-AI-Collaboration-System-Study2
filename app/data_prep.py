@@ -15,17 +15,17 @@ from app.config import (
 )
 
 STUDY_SET_SIZE = 120
-BORDERLINE_SHARE = 0.50  # higher share since German Credit has many borderline cases
+BORDERLINE_SHARE = 0.50  
 
 
 def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Drop index column if present
+    
     if "Unnamed: 0" in df.columns:
         df = df.drop(columns=["Unnamed: 0"])
 
-    # Map Risk -> loan_approved (good=1, bad=0)
+    
     if "Risk" in df.columns:
         df[TARGET_COL] = (df["Risk"] == "good").astype(int)
         df = df.drop(columns=["Risk"])
