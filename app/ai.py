@@ -40,18 +40,40 @@ def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
     return preprocess, clf
 
 
+def _get_missing_original_features(X_dict: Dict[str, Any]) -> set:
+    """Returns the set of original feature names where the value is missing/unknown."""
+    missing = set()
+    for key, val in X_dict.items():
+        if val is None or str(val).strip().lower() in ("unknown", "not available", "nan", ""):
+            missing.add(key.lower())
+    return missing
+
+
 def _aggregate_shap_by_feature(
     feat_names: List[str],
     values: np.ndarray,
+    missing_features: set,
 ) -> List[Tuple[str, float]]:
     aggregated: Dict[str, float] = defaultdict(float)
 
     for fname, val in zip(feat_names, values.tolist()):
         if abs(val) < 1e-9:
             continue
+
+        
         if "unknown" in fname.lower():
             continue
+
+        
         clean = fname.split("__", 1)[1] if "__" in fname else fname
+
+        
+        base = clean.rsplit("_", 1)[0].strip().lower() if "_" in clean else clean.strip().lower()
+
+        
+        if base in missing_features:
+            continue
+
         aggregated[clean] += val
 
     return sorted(aggregated.items(), key=lambda fv: abs(fv[1]), reverse=True)
@@ -88,7 +110,8 @@ def _compute_shap_contributions(model, X_dict: Dict[str, Any]) -> List[Tuple[str
         else:
             values = np.array(shap_values).ravel()
 
-        return _aggregate_shap_by_feature(feat_names, values)
+        missing_features = _get_missing_original_features(X_dict)
+        return _aggregate_shap_by_feature(feat_names, values, missing_features)
 
     except ImportError:
         return _compute_importance_contributions(model, X_dict)
@@ -131,8 +154,14 @@ def _build_explanation(
     contribs: List[Tuple[str, float]],
     recommendation: str,
     max_items: int = 3,
+    min_shap_threshold: float = 0.01,
 ) -> List[str]:
     reasons: List[str] = []
+    if not contribs:
+        return reasons
+
+    # Filter out very weak contributions
+    contribs = [(f, c) for (f, c) in contribs if abs(c) >= min_shap_threshold]
     if not contribs:
         return reasons
 
