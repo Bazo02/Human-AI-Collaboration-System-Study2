@@ -204,12 +204,26 @@
         </div>
 
         <div class="ai-confidence">
-            Confidence: {{ (ai.confidence * 100)|round(1) }}%
+            Confidence level: {{ ai.confidence_label }}
         </div>
 
+        {% if ai.confidence_label == "Low" %}
+        <div class="small-text" style="margin-bottom: 10px; font-weight: 700;">
+            Low-confidence recommendation: the AI is close to uncertain in this case.
+        </div>
+        {% elif ai.confidence_label == "Moderate" %}
+        <div class="small-text" style="margin-bottom: 10px; font-weight: 700;">
+            Moderate-confidence recommendation.
+        </div>
+        {% else %}
+        <div class="small-text" style="margin-bottom: 10px; font-weight: 700;">
+            High-confidence recommendation.
+        </div>
+        {% endif %}
+
         <div class="small-text" style="margin-bottom: 10px;">
-            The color of each factor shows how strongly it influenced the AI recommendation:
-            green = strong influence, yellow = moderate influence, and red = weaker influence.
+            The explanation shows the main factors the AI model used when calculating its recommendation.
+            These factors do not necessarily mean that each value is good or bad by itself.
         </div>
 
         {% if ai.explanation %}
@@ -217,22 +231,14 @@
         <div class="ai-explanation-inline" id="ai-explanation">
 
             <div class="ai-explanation-label">
-                Main factors influencing this recommendation:
+                Main factors considered by the AI:
             </div>
 
             <ul>
 
                 {% for reason in ai.explanation %}
 
-                <li class="
-                    {% if reason.weight == 'high' %}
-                        explanation-high
-                    {% elif reason.weight == 'medium' %}
-                        explanation-medium
-                    {% else %}
-                        explanation-low
-                    {% endif %}
-                ">
+                <li>
 
                     <strong>{{ reason.factor }}</strong><br>
                     <span>{{ reason.text }}</span>

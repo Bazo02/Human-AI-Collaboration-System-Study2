@@ -15,8 +15,10 @@ from app.config import (
 )
 
 STUDY_SET_SIZE = 120
-BORDERLINE_PROB_LOW = 0.30
-BORDERLINE_PROB_HIGH = 0.70
+N_BORDERLINE = 40
+N_CLEAR_APPROVE = 40
+N_CLEAR_REJECT = 40
+
 RANDOM_STATE = 42
 
 
@@ -53,14 +55,26 @@ def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
 
 def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     exclude = set(["case_id", TARGET_COL] + DROP_COLS_FOR_UI)
-    feature_cols = [c for c in df.columns if c not in exclude]
-    numeric_cols = [c for c in feature_cols if df[c].dtype.kind in "biufc"]
-    categorical_cols = [c for c in feature_cols if c not in numeric_cols]
+
+    feature_cols = [
+        c for c in df.columns
+        if c not in exclude
+    ]
+
+    numeric_cols = [
+        c for c in feature_cols
+        if df[c].dtype.kind in "biufc"
+    ]
+
+    categorical_cols = [
+        c for c in feature_cols
+        if c not in numeric_cols
+    ]
 
     return numeric_cols, categorical_cols
 
 
-def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
+def _score_cases(df: pd.DataFrame) -> pd.DataFrame:
     from sklearn.compose import ColumnTransformer
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -95,45 +109,102 @@ def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
 
     scored = df.copy()
     scored["_prob"] = model.predict_proba(X)[:, 1]
+    scored["_distance_to_boundary"] = (scored["_prob"] - 0.5).abs()
 
-    borderline = scored[
-        (scored["_prob"] >= BORDERLINE_PROB_LOW)
-        & (scored["_prob"] <= BORDERLINE_PROB_HIGH)
-    ].copy()
+    return scored
 
-    approved = borderline[borderline[TARGET_COL] == 1]
-    rejected = borderline[borderline[TARGET_COL] == 0]
 
-    half = STUDY_SET_SIZE // 2
-    n_approve = min(half, len(approved))
-    n_reject = min(half, len(rejected))
+def _take_cases(
+    df: pd.DataFrame,
+    n: int,
+    selected_ids: set,
+    sort_col: str,
+    ascending: bool,
+) -> pd.DataFrame:
+    available = df[~df["case_id"].isin(selected_ids)].copy()
+
+    if available.empty or n <= 0:
+        return pd.DataFrame()
+
+    return available.sort_values(sort_col, ascending=ascending).head(n)
+
+
+def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
+    scored = _score_cases(df)
 
     selected_parts = []
+    selected_ids = set()
 
-    if n_approve > 0:
-        selected_parts.append(approved.sample(n=n_approve, random_state=RANDOM_STATE))
+    borderline = scored.sort_values(
+        "_distance_to_boundary",
+        ascending=True,
+    ).head(N_BORDERLINE)
 
-    if n_reject > 0:
-        selected_parts.append(rejected.sample(n=n_reject, random_state=RANDOM_STATE))
+    selected_parts.append(borderline)
+    selected_ids.update(borderline["case_id"].tolist())
 
-    selected = pd.concat(selected_parts, axis=0) if selected_parts else pd.DataFrame()
+    clear_approve_pool = scored[
+        (scored[TARGET_COL] == 1)
+        & (~scored["case_id"].isin(selected_ids))
+    ].copy()
 
-    remaining = STUDY_SET_SIZE - len(selected)
+    clear_approve = _take_cases(
+        df=clear_approve_pool,
+        n=N_CLEAR_APPROVE,
+        selected_ids=selected_ids,
+        sort_col="_prob",
+        ascending=False,
+    )
 
-    if remaining > 0:
-        selected_ids = set(selected["case_id"].tolist()) if not selected.empty else set()
-        fallback = scored[~scored["case_id"].isin(selected_ids)].copy()
-        fallback["_distance_to_boundary"] = (fallback["_prob"] - 0.5).abs()
-        fallback = fallback.sort_values("_distance_to_boundary").head(remaining)
-        selected = pd.concat([selected, fallback], axis=0)
+    selected_parts.append(clear_approve)
+    selected_ids.update(clear_approve["case_id"].tolist())
 
+    clear_reject_pool = scored[
+        (scored[TARGET_COL] == 0)
+        & (~scored["case_id"].isin(selected_ids))
+    ].copy()
+
+    clear_reject = _take_cases(
+        df=clear_reject_pool,
+        n=N_CLEAR_REJECT,
+        selected_ids=selected_ids,
+        sort_col="_prob",
+        ascending=True,
+    )
+
+    selected_parts.append(clear_reject)
+    selected_ids.update(clear_reject["case_id"].tolist())
+
+    selected = pd.concat(selected_parts, axis=0)
+
+    if len(selected) < STUDY_SET_SIZE:
+        missing = STUDY_SET_SIZE - len(selected)
+
+        remaining = scored[
+            ~scored["case_id"].isin(selected_ids)
+        ].copy()
+
+        fill = remaining.sort_values(
+            "_distance_to_boundary",
+            ascending=True,
+        ).head(missing)
+
+        selected = pd.concat([selected, fill], axis=0)
+
+    selected = selected.head(STUDY_SET_SIZE)
     selected = selected.sample(frac=1.0, random_state=123).reset_index(drop=True)
 
     print(f"Study set: {len(selected)} cases")
-    print(f"Approved: {int(selected[TARGET_COL].sum())}, Rejected: {int((selected[TARGET_COL] == 0).sum())}")
+    print(f"Approved: {int(selected[TARGET_COL].sum())}")
+    print(f"Rejected: {int((selected[TARGET_COL] == 0).sum())}")
     print(f"Mean prob: {selected['_prob'].mean():.3f}")
+    print(f"Min prob: {selected['_prob'].min():.3f}")
+    print(f"Max prob: {selected['_prob'].max():.3f}")
 
-    selected = selected.drop(columns=["_prob", "_distance_to_boundary"], errors="ignore")
+    selected = selected.drop(
+        columns=["_prob", "_distance_to_boundary"],
+        errors="ignore",
+    )
 
     return selected
 
@@ -154,6 +225,7 @@ def main() -> None:
 
     df = pd.read_csv(DATA_PATH)
     df = _basic_clean(df)
+
     study_df = _select_study_cases(df)
     study_df = _drop_sensitive_and_unused_cols(study_df)
 

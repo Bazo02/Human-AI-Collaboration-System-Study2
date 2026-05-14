@@ -222,20 +222,11 @@ p {
   color: hsl(222 35% 14%);
 }
 
-/* UPDATED EXPLANATION COLORS */
-
 .ai-explanation-inline {
   margin-top: 14px;
   padding: 14px 16px;
-
   border-left: 4px solid hsl(230 90% 60% / 0.55);
-
-  border-radius:
-    0
-    var(--radius-sm)
-    var(--radius-sm)
-    0;
-
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: hsl(230 90% 60% / 0.06);
 }
 
@@ -257,40 +248,15 @@ p {
   padding: 12px 14px;
   border-radius: 10px;
   line-height: 1.5;
-  border: 1px solid transparent;
+  background: hsl(0 0% 100% / 0.72);
+  border: 1px solid hsl(220 16% 90% / 0.9);
 }
 
 .ai-explanation-inline li strong {
   display: block;
   margin-bottom: 4px;
   font-size: 14px;
-}
-
-.explanation-high {
-  background: hsl(152 62% 38% / 0.16);
-  border-color: hsl(152 62% 38% / 0.28);
-}
-
-.explanation-high strong {
-  color: hsl(152 62% 26%);
-}
-
-.explanation-medium {
-  background: hsl(45 100% 50% / 0.16);
-  border-color: hsl(45 100% 45% / 0.26);
-}
-
-.explanation-medium strong {
-  color: hsl(36 90% 30%);
-}
-
-.explanation-low {
-  background: hsl(0 76% 54% / 0.12);
-  border-color: hsl(0 76% 54% / 0.22);
-}
-
-.explanation-low strong {
-  color: hsl(0 65% 36%);
+  color: hsl(230 55% 28%);
 }
 
 .pill {

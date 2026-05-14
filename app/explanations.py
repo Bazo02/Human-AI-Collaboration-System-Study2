@@ -20,7 +20,7 @@ def format_feature_value(feature: str, value: Any) -> str:
         except Exception:
             return str(value)
 
-    if feature in ["person_age", "person_emp_exp"]:
+    if feature in ["person_age", "person_emp_exp", "credit_score"]:
         try:
             return f"{int(float(value))}"
         except Exception:
@@ -57,49 +57,53 @@ def format_feature_value(feature: str, value: Any) -> str:
     return text.replace("_", " ").title()
 
 
-def build_reason(feature: str, value: Any, recommendation: str) -> str:
-    formatted_value = format_feature_value(feature, value)
-
+def _feature_phrase(feature: str, formatted_value: str) -> str:
     if feature == "person_income":
-        if recommendation == "Approve":
-            return "The applicant’s income level supported the recommendation."
-        return "The applicant’s income level increased financial risk."
+        return f"Annual income: {formatted_value}"
 
     if feature == "loan_int_rate":
-        if recommendation == "Approve":
-            return "The interest rate supported the recommendation."
-        return "The interest rate increased the estimated repayment burden."
+        return f"Interest rate: {formatted_value}"
 
     if feature == "credit_score":
-        if recommendation == "Approve":
-            return "The applicant’s credit score supported approval."
-        return "The applicant’s credit score increased repayment risk."
+        return f"Credit score: {formatted_value}"
 
     if feature == "previous_loan_defaults_on_file":
-        if str(value).strip().lower() == "yes":
-            return "Previous repayment problems increased the estimated loan risk."
-        return "No previous repayment problems supported approval."
+        return f"Previous repayment problems: {formatted_value}"
 
     if feature == "loan_amnt":
-        if recommendation == "Approve":
-            return "The requested loan amount supported the recommendation."
-        return "The requested loan amount increased repayment risk."
+        return f"Requested loan amount: {formatted_value}"
 
     if feature == "person_emp_exp":
-        if recommendation == "Approve":
-            return "Employment experience supported the recommendation."
-        return "Limited employment experience increased uncertainty."
+        return f"Employment experience: {formatted_value} years"
 
     if feature == "person_home_ownership":
-        return f"Housing situation ({formatted_value}) influenced the recommendation."
+        return f"Housing situation: {formatted_value}"
 
     if feature == "loan_intent":
-        return f"The loan purpose ({formatted_value}) influenced the recommendation."
+        return f"Loan purpose: {formatted_value}"
 
     if feature == "person_education":
-        return f"Education level ({formatted_value}) influenced the recommendation."
+        return f"Education level: {formatted_value}"
 
     if feature == "person_age":
-        return "Applicant age influenced the recommendation."
+        return f"Applicant age: {formatted_value} years"
 
-    return f"{feature.replace('_', ' ').title()} influenced the recommendation."
+    if formatted_value:
+        return f"{feature.replace('_', ' ').title()}: {formatted_value}"
+
+    return feature.replace("_", " ").title()
+
+
+def build_reason(
+    feature: str,
+    value: Any,
+    recommendation: str,
+    contribution: float,
+) -> str:
+    formatted_value = format_feature_value(feature, value)
+    phrase = _feature_phrase(feature, formatted_value)
+
+    return (
+        f"{phrase}. This was one of the main factors used by the AI model "
+        f"when calculating this recommendation."
+    )

@@ -1,0 +1,4436 @@
+===== FILE: app/db.py =====
+# app/db.py
+
+from __future__ import annotations
+
+import os
+import sqlite3
+from typing import Optional, Any, Dict
+
+from app.config import SQLITE_DB_PATH
+
+
+def _ensure_parent_dir(path: str) -> None:
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
+
+def get_conn() -> sqlite3.Connection:
+    _ensure_parent_dir(SQLITE_DB_PATH)
+    conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    rows = cur.fetchall()
+    return any(str(row[1]) == column for row in rows)
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    if not _column_exists(conn, table, column):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+
+def init_db() -> None:
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS participants (
+        participant_id TEXT PRIMARY KEY,
+        ts_utc TEXT NOT NULL,
+        age_group TEXT,
+        background TEXT,
+        ai_familiarity TEXT,
+        finance_familiarity TEXT,
+        condition_order TEXT DEFAULT 'AB',
+        completed INTEGER NOT NULL DEFAULT 0
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc TEXT NOT NULL,
+        participant_id TEXT NOT NULL,
+        condition TEXT NOT NULL,
+        case_id TEXT,
+        event TEXT NOT NULL,
+        payload_json TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc TEXT NOT NULL,
+        participant_id TEXT NOT NULL,
+        condition TEXT NOT NULL,
+        case_id TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        ground_truth INTEGER NOT NULL,
+        correct INTEGER NOT NULL,
+        time_ms INTEGER,
+        ai_followed INTEGER,
+        ai_seen INTEGER,
+        explanation_opened INTEGER
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS surveys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc TEXT NOT NULL,
+        participant_id TEXT NOT NULL,
+        condition TEXT NOT NULL,
+        answers_json TEXT NOT NULL
+    )
+    """)
+
+    _ensure_column(conn, "decisions", "ai_recommendation", "TEXT")
+    _ensure_column(conn, "decisions", "ai_confidence", "REAL")
+    _ensure_column(conn, "decisions", "ai_prob_approve", "REAL")
+    _ensure_column(conn, "participants", "condition_order", "TEXT")
+
+    conn.commit()
+    conn.close()
+
+
+def db_get_participant_count() -> int:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM participants")
+    n = int(cur.fetchone()[0])
+    conn.close()
+    return n
+
+
+def db_count_rows(table: str) -> int:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"SELECT COUNT(*) FROM {table}")
+    n = int(cur.fetchone()[0])
+    conn.close()
+    return n
+
+
+def db_list_participants() -> list[str]:
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT participant_id FROM participants
+        UNION
+        SELECT DISTINCT participant_id FROM decisions
+        UNION
+        SELECT DISTINCT participant_id FROM surveys
+        UNION
+        SELECT DISTINCT participant_id FROM events
+    """)
+    rows = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    cleaned = sorted([p for p in rows if p and str(p).strip() and str(p) != "ADMIN"])
+    return cleaned
+
+
+def db_get_participant_stats() -> list[dict]:
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        WITH participant_ids AS (
+            SELECT participant_id FROM participants
+            UNION
+            SELECT participant_id FROM decisions
+            UNION
+            SELECT participant_id FROM surveys
+            UNION
+            SELECT participant_id FROM events
+        )
+        SELECT
+            p.participant_id,
+            COALESCE(d.decisions_count, 0) AS decisions_count,
+            COALESCE(e.events_count, 0) AS events_count,
+            COALESCE(s.surveys_count, 0) AS surveys_count,
+            COALESCE(pt.completed, 0) AS completed,
+            COALESCE(pt.age_group, '') AS age_group,
+            COALESCE(pt.background, '') AS background,
+            COALESCE(pt.ai_familiarity, '') AS ai_familiarity,
+            COALESCE(pt.finance_familiarity, '') AS finance_familiarity,
+            COALESCE(pt.condition_order, 'AB') AS condition_order
+        FROM participant_ids p
+        LEFT JOIN (
+            SELECT participant_id, COUNT(*) AS decisions_count
+            FROM decisions
+            GROUP BY participant_id
+        ) d ON p.participant_id = d.participant_id
+        LEFT JOIN (
+            SELECT participant_id, COUNT(*) AS events_count
+            FROM events
+            GROUP BY participant_id
+        ) e ON p.participant_id = e.participant_id
+        LEFT JOIN (
+            SELECT participant_id, COUNT(*) AS surveys_count
+            FROM surveys
+            GROUP BY participant_id
+        ) s ON p.participant_id = s.participant_id
+        LEFT JOIN participants pt ON p.participant_id = pt.participant_id
+        WHERE p.participant_id IS NOT NULL
+          AND TRIM(p.participant_id) != ''
+          AND p.participant_id != 'ADMIN'
+        ORDER BY p.participant_id
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "participant_id": row[0],
+            "decisions": int(row[1]),
+            "events": int(row[2]),
+            "surveys": int(row[3]),
+            "completed": int(row[4]),
+            "age_group": row[5],
+            "background": row[6],
+            "ai_familiarity": row[7],
+            "finance_familiarity": row[8],
+            "condition_order": row[9],
+        }
+        for row in rows
+    ]
+
+
+def db_delete_participant(participant_id: str) -> dict:
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM decisions WHERE participant_id = ?", (participant_id,))
+    d_before = int(cur.fetchone()[0])
+    cur.execute("DELETE FROM decisions WHERE participant_id = ?", (participant_id,))
+
+    cur.execute("SELECT COUNT(*) FROM surveys WHERE participant_id = ?", (participant_id,))
+    s_before = int(cur.fetchone()[0])
+    cur.execute("DELETE FROM surveys WHERE participant_id = ?", (participant_id,))
+
+    cur.execute("SELECT COUNT(*) FROM events WHERE participant_id = ?", (participant_id,))
+    e_before = int(cur.fetchone()[0])
+    cur.execute("DELETE FROM events WHERE participant_id = ?", (participant_id,))
+
+    cur.execute("SELECT COUNT(*) FROM participants WHERE participant_id = ?", (participant_id,))
+    p_before = int(cur.fetchone()[0])
+    cur.execute("DELETE FROM participants WHERE participant_id = ?", (participant_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {"decisions": d_before, "surveys": s_before, "events": e_before, "participants": p_before}
+
+
+def db_clear_table(table: str) -> int:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"SELECT COUNT(*) FROM {table}")
+    before = int(cur.fetchone()[0])
+    cur.execute(f"DELETE FROM {table}")
+    conn.commit()
+    conn.close()
+    return before
+
+
+def db_clear_all() -> dict:
+    return {
+        "participants": db_clear_table("participants"),
+        "events": db_clear_table("events"),
+        "decisions": db_clear_table("decisions"),
+        "surveys": db_clear_table("surveys"),
+    }
+
+===== FILE: app/config.py =====
+# app/config.py
+from __future__ import annotations
+
+import os
+import secrets
+
+
+SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
+
+DATA_PATH = os.path.join(DATA_DIR, "loan_data.csv")
+CASES_FOR_STUDY_PATH = os.path.join(DATA_DIR, "cases_for_study.csv")
+
+MODEL_PATH = os.path.join(PROJECT_ROOT, "app", "model.joblib")
+PARTICIPANT_SUMMARY_PATH = os.path.join(
+    OUTPUTS_DIR,
+    "participant_summary.csv"
+)
+
+TARGET_COL = "loan_approved"
+
+DROP_COLS_FOR_UI = [
+    "person_gender",
+    "loan_percent_income",
+    "cb_person_cred_hist_length",
+    "loan_status",
+]
+
+CONDITION_NAMES = {
+    "baseline": "Non-assisted (baseline)",
+    "ai": "AI-assisted",
+}
+
+CASES_PER_PARTICIPANT = 12
+TOTAL_CASES_PER_PARTICIPANT = CASES_PER_PARTICIPANT * 2
+
+APPROVAL_THRESHOLD = 0.50
+
+EVENTS_LOG_PATH = os.path.join(OUTPUTS_DIR, "events.csv")
+DECISIONS_LOG_PATH = os.path.join(OUTPUTS_DIR, "decisions.csv")
+SURVEYS_LOG_PATH = os.path.join(OUTPUTS_DIR, "surveys.csv")
+
+SQLITE_DB_PATH = os.path.join(OUTPUTS_DIR, "study.db")
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
+
+===== FILE: app/model_train.py =====
+from __future__ import annotations
+
+import os
+from typing import List, Tuple
+
+import joblib
+import pandas as pd
+
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from xgboost import XGBClassifier
+
+from app.config import (
+    DATA_PATH,
+    CASES_FOR_STUDY_PATH,
+    MODEL_PATH,
+    TARGET_COL,
+    DROP_COLS_FOR_UI,
+)
+
+EXCLUDE_COLS = set([
+    "Unnamed: 0",
+    "case_id",
+    TARGET_COL,
+] + DROP_COLS_FOR_UI)
+
+RANDOM_STATE = 42
+
+
+def _load_training_data() -> pd.DataFrame:
+    if os.path.exists(DATA_PATH):
+        df = pd.read_csv(DATA_PATH)
+    elif os.path.exists(CASES_FOR_STUDY_PATH):
+        df = pd.read_csv(CASES_FOR_STUDY_PATH)
+    else:
+        raise FileNotFoundError("Could not find a dataset to train on.")
+
+    if "loan_status" in df.columns and TARGET_COL not in df.columns:
+        df[TARGET_COL] = df["loan_status"].astype(int)
+
+    if TARGET_COL not in df.columns:
+        raise ValueError(f"Target column '{TARGET_COL}' could not be created or found.")
+
+    return df
+
+
+def _clean_training_data(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "Unnamed: 0" in df.columns:
+        df = df.drop(columns=["Unnamed: 0"])
+
+    df = df.drop_duplicates().reset_index(drop=True)
+    df[TARGET_COL] = df[TARGET_COL].astype(int)
+
+    for col in df.columns:
+        if col == TARGET_COL:
+            continue
+
+        if df[col].dtype.kind in "biufc":
+            df[col] = df[col].fillna(df[col].median())
+        else:
+            df[col] = df[col].fillna("Unknown")
+
+    return df
+
+
+def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+    feature_cols = [c for c in df.columns if c not in EXCLUDE_COLS]
+    numeric_cols = [c for c in feature_cols if df[c].dtype.kind in "biufc"]
+    categorical_cols = [c for c in feature_cols if c not in numeric_cols]
+
+    return numeric_cols, categorical_cols
+
+
+def main() -> None:
+    df = _load_training_data()
+    df = _clean_training_data(df)
+
+    numeric_cols, categorical_cols = _split_columns(df)
+
+    print("Training columns:")
+    print(f"  Numeric: {numeric_cols}")
+    print(f"  Categorical: {categorical_cols}")
+
+    X = df[numeric_cols + categorical_cols]
+    y = df[TARGET_COL].astype(int)
+
+    stratify = y if y.nunique() > 1 else None
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.25,
+        random_state=RANDOM_STATE,
+        stratify=stratify,
+    )
+
+    preprocess = ColumnTransformer([
+        ("num", StandardScaler(), numeric_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols),
+    ])
+
+    clf = XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        eval_metric="logloss",
+        random_state=RANDOM_STATE,
+    )
+
+    model = Pipeline([
+        ("preprocess", preprocess),
+        ("clf", clf),
+    ])
+
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    print("\nModel evaluation:")
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.3f}")
+    print(f"Confusion matrix:\n{confusion_matrix(y_test, y_pred)}")
+    print(f"\nClassification report:\n{classification_report(y_test, y_pred)}")
+
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    joblib.dump(model, MODEL_PATH)
+
+    print(f"\nModel saved to: {MODEL_PATH}")
+
+    try:
+        import shap
+        print("SHAP is available.")
+    except ImportError:
+        print("SHAP not available. Install it with: pip install shap")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: app/analysis.py =====
+# app/analysis.py
+
+from __future__ import annotations
+
+import os
+import json
+from typing import Dict, Any, List, Optional, Tuple
+
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+from app.db import get_conn
+from app.config import PARTICIPANT_SUMMARY_PATH
+
+try:
+    from scipy import stats as scipy_stats
+except Exception:
+    scipy_stats = None
+
+
+RESULTS_DIRNAME = "results"
+
+
+def _to_int(x) -> Optional[int]:
+    try:
+        return int(x)
+    except Exception:
+        return None
+
+
+def _compute_sus_from_answers(answers: Dict[str, Any]) -> Optional[float]:
+    scores: List[int] = []
+    for i in range(1, 11):
+        key = f"sus_q{i}"
+        v = _to_int(answers.get(key))
+        if v is None:
+            return None
+        if i % 2 == 1:
+            scores.append(v - 1)
+        else:
+            scores.append(5 - v)
+    return float(sum(scores) * 2.5)
+
+
+def _compute_trust_from_answers(answers: Dict[str, Any]) -> Optional[float]:
+    vals = []
+    for k in ["trust_q1", "trust_q2", "trust_q3"]:
+        v = _to_int(answers.get(k))
+        if v is None:
+            return None
+        vals.append(v)
+    return float(sum(vals) / len(vals))
+
+
+def _extract_comment(answers: Dict[str, Any]) -> str:
+    candidate_keys = [
+        "comment", "comments", "feedback", "message",
+        "free_text", "additional_feedback", "open_feedback",
+        "participant_comment", "notes"
+    ]
+    for k in candidate_keys:
+        if k in answers:
+            txt = str(answers.get(k, "")).strip()
+            if txt:
+                return txt
+    for k, v in answers.items():
+        if v is None:
+            continue
+        txt = str(v).strip()
+        if not txt:
+            continue
+        if txt.isdigit():
+            continue
+        lowk = str(k).lower()
+        if lowk.startswith(("sus_", "trust_")):
+            continue
+        if txt.lower() in ("baseline", "ai"):
+            continue
+        return txt
+    return ""
+
+
+def _read_table_as_df(table: str) -> pd.DataFrame:
+    conn = get_conn()
+    try:
+        return pd.read_sql_query(f"SELECT * FROM {table}", conn)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+
+def _parse_surveys_df(raw_surveys: pd.DataFrame) -> pd.DataFrame:
+    if raw_surveys.empty:
+        return raw_surveys
+
+    rows = []
+    for _, r in raw_surveys.iterrows():
+        answers_json = r.get("answers_json", "{}")
+        try:
+            answers = json.loads(answers_json) if isinstance(answers_json, str) else {}
+        except Exception:
+            answers = {}
+
+        rows.append({
+            "participant_id": r.get("participant_id"),
+            "condition": r.get("condition"),
+            "sus_score": _compute_sus_from_answers(answers),
+            "trust_score": _compute_trust_from_answers(answers),
+            "comment": _extract_comment(answers),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _paired_stats(df: pd.DataFrame, baseline_col: str, ai_col: str) -> Dict[str, Any]:
+    if df.empty or baseline_col not in df.columns or ai_col not in df.columns:
+        return {}
+
+    pair_df = df[["participant_id", baseline_col, ai_col]].dropna().copy()
+    if pair_df.empty:
+        return {}
+
+    baseline = pair_df[baseline_col].astype(float).to_numpy()
+    ai = pair_df[ai_col].astype(float).to_numpy()
+    diff = ai - baseline
+
+    result: Dict[str, Any] = {
+        "n": int(len(pair_df)),
+        "baseline_mean": float(np.mean(baseline)),
+        "baseline_sd": float(np.std(baseline, ddof=1)) if len(baseline) > 1 else 0.0,
+        "ai_mean": float(np.mean(ai)),
+        "ai_sd": float(np.std(ai, ddof=1)) if len(ai) > 1 else 0.0,
+        "mean_difference": float(np.mean(diff)),
+        "sd_difference": float(np.std(diff, ddof=1)) if len(diff) > 1 else 0.0,
+    }
+
+    if len(diff) > 1 and np.std(diff, ddof=1) > 0:
+        result["cohens_dz"] = float(np.mean(diff) / np.std(diff, ddof=1))
+    else:
+        result["cohens_dz"] = 0.0
+
+    if scipy_stats is not None and len(diff) > 1:
+        t_stat, p_value = scipy_stats.ttest_rel(ai, baseline, nan_policy="omit")
+        sem = scipy_stats.sem(diff, nan_policy="omit")
+        ci_low, ci_high = scipy_stats.t.interval(
+            confidence=0.95,
+            df=len(diff) - 1,
+            loc=np.mean(diff),
+            scale=sem,
+        )
+        result["t_statistic"] = float(t_stat)
+        result["p_value"] = float(p_value)
+        result["ci95_low"] = float(ci_low)
+        result["ci95_high"] = float(ci_high)
+    else:
+        result["t_statistic"] = None
+        result["p_value"] = None
+        result["ci95_low"] = None
+        result["ci95_high"] = None
+
+    return result
+
+
+def _accuracy_improvement_groups(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Splits participants into improved, worsened, and unchanged groups
+    based on accuracy change from baseline to AI condition.
+    Also runs an independent t-test comparing baseline accuracy between
+    the improved and worsened groups.
+    """
+    if df.empty:
+        return {}
+
+    needed = ["participant_id", "baseline_accuracy", "ai_accuracy"]
+    if not all(c in df.columns for c in needed):
+        return {}
+
+    pair_df = df[needed].dropna().copy()
+    if pair_df.empty:
+        return {}
+
+    pair_df["diff"] = pair_df["ai_accuracy"] - pair_df["baseline_accuracy"]
+
+    improved = pair_df[pair_df["diff"] > 0]
+    worsened = pair_df[pair_df["diff"] < 0]
+    unchanged = pair_df[pair_df["diff"] == 0]
+
+    result: Dict[str, Any] = {
+        "n_improved": int(len(improved)),
+        "n_worsened": int(len(worsened)),
+        "n_unchanged": int(len(unchanged)),
+        "improved_baseline_accuracy_mean": float(improved["baseline_accuracy"].mean()) if not improved.empty else None,
+        "worsened_baseline_accuracy_mean": float(worsened["baseline_accuracy"].mean()) if not worsened.empty else None,
+    }
+
+    # Independent t-test: baseline accuracy of improved vs worsened
+    if scipy_stats is not None and len(improved) > 1 and len(worsened) > 1:
+        t_stat, p_value = scipy_stats.ttest_ind(
+            improved["baseline_accuracy"].to_numpy(),
+            worsened["baseline_accuracy"].to_numpy(),
+            equal_var=False,
+        )
+        result["group_ttest_t"] = float(t_stat)
+        result["group_ttest_p"] = float(p_value)
+    else:
+        result["group_ttest_t"] = None
+        result["group_ttest_p"] = None
+
+    return result
+
+
+def _spearman_trust_vs_ai_followed(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Computes Spearman correlation between trust score and AI-followed rate.
+    """
+    if df.empty:
+        return {}
+
+    needed = ["trust_score", "ai_ai_followed_rate"]
+    if not all(c in df.columns for c in needed):
+        return {}
+
+    pair_df = df[needed].dropna()
+    if len(pair_df) < 3:
+        return {}
+
+    if scipy_stats is not None:
+        rs, p = scipy_stats.spearmanr(
+            pair_df["trust_score"].to_numpy(),
+            pair_df["ai_ai_followed_rate"].to_numpy(),
+        )
+        return {"rs": float(rs), "p_value": float(p), "n": int(len(pair_df))}
+
+    return {}
+
+
+def _ai_followed_distribution(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Returns descriptive statistics for AI-followed rate distribution.
+    """
+    if df.empty or "ai_ai_followed_rate" not in df.columns:
+        return {}
+
+    vals = df["ai_ai_followed_rate"].dropna().to_numpy()
+    if len(vals) == 0:
+        return {}
+
+    return {
+        "mean": float(np.mean(vals)),
+        "sd": float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0,
+        "min": float(np.min(vals)),
+        "max": float(np.max(vals)),
+        "median": float(np.median(vals)),
+    }
+
+
+def _counterbalance_subgroup_stats(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Study 2: Splits accuracy and decision time results by condition_order (AB vs BA)
+    to check whether presentation order influenced outcomes.
+    """
+    if df.empty or "condition_order" not in df.columns:
+        return {}
+
+    results: Dict[str, Any] = {}
+
+    for order in ["AB", "BA"]:
+        group = df[df["condition_order"] == order]
+        if group.empty:
+            continue
+
+        entry: Dict[str, Any] = {"n": int(len(group))}
+
+        for col in ["baseline_accuracy", "ai_accuracy", "baseline_avg_time_seconds", "ai_avg_time_seconds"]:
+            if col in group.columns:
+                vals = group[col].dropna()
+                if not vals.empty:
+                    entry[f"{col}_mean"] = float(vals.mean())
+                    entry[f"{col}_sd"] = float(vals.std(ddof=1)) if len(vals) > 1 else 0.0
+
+        results[order] = entry
+
+    # Independent t-test: AI accuracy AB vs BA
+    if scipy_stats is not None and "AB" in results and "BA" in results:
+        ab = df[df["condition_order"] == "AB"]["ai_accuracy"].dropna().to_numpy()
+        ba = df[df["condition_order"] == "BA"]["ai_accuracy"].dropna().to_numpy()
+        if len(ab) > 1 and len(ba) > 1:
+            t_stat, p_value = scipy_stats.ttest_ind(ab, ba, equal_var=False)
+            results["order_effect_ai_accuracy_t"] = float(t_stat)
+            results["order_effect_ai_accuracy_p"] = float(p_value)
+
+    return results
+
+
+def _participant_level_summary(
+    participants: pd.DataFrame,
+    decisions: pd.DataFrame,
+    surveys: pd.DataFrame,
+) -> pd.DataFrame:
+    if decisions.empty and surveys.empty and participants.empty:
+        return pd.DataFrame()
+
+    participant_df = participants.copy()
+    if participant_df.empty:
+        participant_ids = set()
+        if not decisions.empty and "participant_id" in decisions.columns:
+            participant_ids.update(str(x) for x in decisions["participant_id"].dropna().tolist())
+        if not surveys.empty and "participant_id" in surveys.columns:
+            participant_ids.update(str(x) for x in surveys["participant_id"].dropna().tolist())
+        participant_df = pd.DataFrame({"participant_id": sorted(participant_ids)})
+
+    if "completed" not in participant_df.columns:
+        participant_df["completed"] = 0
+
+    decision_summary = pd.DataFrame()
+    if not decisions.empty:
+        agg_map: Dict[str, Tuple[str, str]] = {}
+
+        if "correct" in decisions.columns:
+            agg_map["accuracy"] = ("correct", "mean")
+        if "time_ms" in decisions.columns:
+            agg_map["avg_time_seconds"] = ("time_ms", lambda s: float(s.mean() / 1000.0))
+        if "ai_followed" in decisions.columns:
+            agg_map["ai_followed_rate"] = ("ai_followed", "mean")
+        if "ai_seen" in decisions.columns:
+            agg_map["ai_seen_rate"] = ("ai_seen", "mean")
+        if "ai_confidence" in decisions.columns:
+            agg_map["avg_ai_confidence"] = ("ai_confidence", "mean")
+        if "ai_prob_approve" in decisions.columns:
+            agg_map["avg_ai_prob_approve"] = ("ai_prob_approve", "mean")
+
+        if agg_map:
+            grouped = decisions.groupby(["participant_id", "condition"]).agg(**agg_map).reset_index()
+            pivoted = grouped.pivot(index="participant_id", columns="condition")
+            pivoted.columns = [f"{cond}_{metric}" for metric, cond in pivoted.columns]
+            decision_summary = pivoted.reset_index()
+
+    survey_summary = pd.DataFrame()
+    if not surveys.empty:
+        survey_summary = surveys.groupby("participant_id", as_index=False).agg(
+            trust_score=("trust_score", "mean"),
+            sus_score=("sus_score", "mean"),
+            comment=("comment", lambda s: " | ".join([str(x).strip() for x in s if str(x).strip()])),
+        )
+
+    merged = participant_df.copy()
+
+    if not decision_summary.empty:
+        merged = merged.merge(decision_summary, on="participant_id", how="left")
+
+    if not survey_summary.empty:
+        merged = merged.merge(survey_summary, on="participant_id", how="left")
+
+    return merged.sort_values("participant_id").reset_index(drop=True)
+
+
+def _make_bar_plot(
+    labels: List[str],
+    values: List[float],
+    title: str,
+    ylabel: str,
+    out_path: str,
+) -> None:
+    plt.figure()
+    plt.bar(labels, values)
+    plt.title(title)
+    plt.ylabel(ylabel)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=160)
+    plt.close()
+
+
+def _make_count_plot(
+    labels: List[str],
+    values: List[int],
+    title: str,
+    ylabel: str,
+    out_path: str,
+) -> None:
+    plt.figure()
+    plt.bar(labels, values)
+    plt.title(title)
+    plt.ylabel(ylabel)
+    plt.xticks(rotation=20, ha="right")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=160)
+    plt.close()
+
+
+def _make_scatter_plot(
+    x: List[float],
+    y: List[float],
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    out_path: str,
+) -> None:
+    plt.figure()
+    plt.scatter(x, y, alpha=0.6)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=160)
+    plt.close()
+
+
+def generate_results(static_root: str) -> Dict[str, Any]:
+    participants = _read_table_as_df("participants")
+    decisions = _read_table_as_df("decisions")
+    events = _read_table_as_df("events")
+    surveys_raw = _read_table_as_df("surveys")
+    surveys = _parse_surveys_df(surveys_raw)
+
+    results_dir = os.path.join(static_root, RESULTS_DIRNAME)
+    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(PARTICIPANT_SUMMARY_PATH), exist_ok=True)
+
+    if decisions.empty and surveys_raw.empty and participants.empty:
+        return {
+            "has_data": False,
+            "message": "No results found yet. Complete at least one full run so data is saved in outputs/study.db.",
+            "summary": {},
+            "plots": {},
+        }
+
+    if not decisions.empty:
+        for col in [
+            "correct", "time_ms", "ai_followed", "ai_seen",
+            "ground_truth", "ai_confidence", "ai_prob_approve",
+        ]:
+            if col in decisions.columns:
+                decisions[col] = pd.to_numeric(decisions[col], errors="coerce")
+
+    if not participants.empty and "completed" in participants.columns:
+        participants["completed"] = pd.to_numeric(participants["completed"], errors="coerce").fillna(0).astype(int)
+
+    participant_summary = _participant_level_summary(participants, decisions, surveys)
+
+    if not participant_summary.empty:
+        participant_summary.to_csv(PARTICIPANT_SUMMARY_PATH, index=False)
+
+    acc_by_cond: Dict[str, float] = {}
+    time_by_cond: Dict[str, float] = {}
+    follow_by_cond: Dict[str, float] = {}
+    trust_by_cond: Dict[str, float] = {}
+    sus_by_cond: Dict[str, float] = {}
+    ai_confidence_by_cond: Dict[str, float] = {}
+    ai_prob_approve_by_cond: Dict[str, float] = {}
+    ai_seen_by_cond: Dict[str, float] = {}
+
+    if not participant_summary.empty:
+        if "baseline_accuracy" in participant_summary.columns and participant_summary["baseline_accuracy"].notna().any():
+            acc_by_cond["baseline"] = float(participant_summary["baseline_accuracy"].mean())
+        if "ai_accuracy" in participant_summary.columns and participant_summary["ai_accuracy"].notna().any():
+            acc_by_cond["ai"] = float(participant_summary["ai_accuracy"].mean())
+
+        if "baseline_avg_time_seconds" in participant_summary.columns and participant_summary["baseline_avg_time_seconds"].notna().any():
+            time_by_cond["baseline"] = float(participant_summary["baseline_avg_time_seconds"].mean())
+        if "ai_avg_time_seconds" in participant_summary.columns and participant_summary["ai_avg_time_seconds"].notna().any():
+            time_by_cond["ai"] = float(participant_summary["ai_avg_time_seconds"].mean())
+
+        if "ai_ai_followed_rate" in participant_summary.columns and participant_summary["ai_ai_followed_rate"].notna().any():
+            follow_by_cond["ai"] = float(participant_summary["ai_ai_followed_rate"].mean())
+
+        if "trust_score" in participant_summary.columns and participant_summary["trust_score"].notna().any():
+            trust_by_cond["ai"] = float(participant_summary["trust_score"].mean())
+
+        if "sus_score" in participant_summary.columns and participant_summary["sus_score"].notna().any():
+            sus_by_cond["ai"] = float(participant_summary["sus_score"].mean())
+
+        if "ai_avg_ai_confidence" in participant_summary.columns and participant_summary["ai_avg_ai_confidence"].notna().any():
+            ai_confidence_by_cond["ai"] = float(participant_summary["ai_avg_ai_confidence"].mean())
+
+        if "ai_avg_ai_prob_approve" in participant_summary.columns and participant_summary["ai_avg_ai_prob_approve"].notna().any():
+            ai_prob_approve_by_cond["ai"] = float(participant_summary["ai_avg_ai_prob_approve"].mean())
+
+        if "ai_ai_seen_rate" in participant_summary.columns and participant_summary["ai_ai_seen_rate"].notna().any():
+            ai_seen_by_cond["ai"] = float(participant_summary["ai_ai_seen_rate"].mean())
+        if "baseline_ai_seen_rate" in participant_summary.columns and participant_summary["baseline_ai_seen_rate"].notna().any():
+            ai_seen_by_cond["baseline"] = float(participant_summary["baseline_ai_seen_rate"].mean())
+
+    comments: List[Dict[str, str]] = []
+    if isinstance(participant_summary, pd.DataFrame) and (not participant_summary.empty) and "comment" in participant_summary.columns:
+        for _, row in participant_summary.iterrows():
+            c = str(row.get("comment", "")).strip()
+            if c:
+                comments.append({
+                    "participant_id": str(row.get("participant_id", "")).strip(),
+                    "condition": "ai",
+                    "comment": c,
+                })
+
+    # Extended statistics
+    accuracy_groups = _accuracy_improvement_groups(participant_summary)
+    spearman_trust_followed = _spearman_trust_vs_ai_followed(participant_summary)
+    ai_followed_dist = _ai_followed_distribution(participant_summary)
+    counterbalance_stats = _counterbalance_subgroup_stats(participant_summary)
+
+    cond_order = ["baseline", "ai"]
+
+    def ordered_values(d: Dict[str, float]) -> Tuple[List[str], List[float]]:
+        labels = [c for c in cond_order if c in d]
+        vals = [d[c] for c in labels]
+        return labels, vals
+
+    plots: Dict[str, str] = {}
+
+    if acc_by_cond:
+        labels, vals = ordered_values(acc_by_cond)
+        out = os.path.join(results_dir, "accuracy.png")
+        _make_bar_plot(labels, vals, "Accuracy by condition", "Accuracy (0–1)", out)
+        plots["accuracy"] = f"/static/{RESULTS_DIRNAME}/accuracy.png"
+
+    if time_by_cond:
+        labels, vals = ordered_values(time_by_cond)
+        out = os.path.join(results_dir, "time.png")
+        _make_bar_plot(labels, vals, "Average decision time by condition", "Seconds", out)
+        plots["time"] = f"/static/{RESULTS_DIRNAME}/time.png"
+
+    if trust_by_cond:
+        labels, vals = ordered_values(trust_by_cond)
+        out = os.path.join(results_dir, "trust.png")
+        _make_bar_plot(labels, vals, "Trust score by condition", "Average (1–5)", out)
+        plots["trust"] = f"/static/{RESULTS_DIRNAME}/trust.png"
+
+    if sus_by_cond:
+        labels, vals = ordered_values(sus_by_cond)
+        out = os.path.join(results_dir, "sus.png")
+        _make_bar_plot(labels, vals, "SUS score by condition", "SUS (0–100)", out)
+        plots["sus"] = f"/static/{RESULTS_DIRNAME}/sus.png"
+
+    if follow_by_cond:
+        labels, vals = ordered_values(follow_by_cond)
+        out = os.path.join(results_dir, "ai_followed.png")
+        _make_bar_plot(labels, vals, "AI-followed rate (AI condition)", "Rate (0–1)", out)
+        plots["ai_followed"] = f"/static/{RESULTS_DIRNAME}/ai_followed.png"
+
+    if ai_confidence_by_cond:
+        labels, vals = ordered_values(ai_confidence_by_cond)
+        out = os.path.join(results_dir, "ai_confidence.png")
+        _make_bar_plot(labels, vals, "Average AI confidence", "Confidence (0–1)", out)
+        plots["ai_confidence"] = f"/static/{RESULTS_DIRNAME}/ai_confidence.png"
+
+    if ai_prob_approve_by_cond:
+        labels, vals = ordered_values(ai_prob_approve_by_cond)
+        out = os.path.join(results_dir, "ai_prob_approve.png")
+        _make_bar_plot(labels, vals, "Average AI approval probability", "Probability (0–1)", out)
+        plots["ai_prob_approve"] = f"/static/{RESULTS_DIRNAME}/ai_prob_approve.png"
+
+    if ai_seen_by_cond:
+        labels, vals = ordered_values(ai_seen_by_cond)
+        out = os.path.join(results_dir, "ai_seen_rate.png")
+        _make_bar_plot(labels, vals, "AI seen rate by condition", "Rate (0–1)", out)
+        plots["ai_seen_rate"] = f"/static/{RESULTS_DIRNAME}/ai_seen_rate.png"
+
+    # Scatter: trust score vs AI-followed rate
+    if not participant_summary.empty:
+        needed = ["trust_score", "ai_ai_followed_rate"]
+        if all(c in participant_summary.columns for c in needed):
+            scatter_df = participant_summary[needed].dropna()
+            if len(scatter_df) >= 3:
+                out = os.path.join(results_dir, "trust_vs_ai_followed.png")
+                _make_scatter_plot(
+                    scatter_df["trust_score"].tolist(),
+                    scatter_df["ai_ai_followed_rate"].tolist(),
+                    "Trust score vs AI-followed rate",
+                    "Trust score (1–5)",
+                    "AI-followed rate (0–1)",
+                    out,
+                )
+                plots["trust_vs_ai_followed"] = f"/static/{RESULTS_DIRNAME}/trust_vs_ai_followed.png"
+
+    # Accuracy distribution: improved vs worsened
+    if not participant_summary.empty:
+        needed = ["baseline_accuracy", "ai_accuracy"]
+        if all(c in participant_summary.columns for c in needed):
+            pair_df = participant_summary[needed].dropna().copy()
+            pair_df["diff"] = pair_df["ai_accuracy"] - pair_df["baseline_accuracy"]
+            improved = pair_df[pair_df["diff"] > 0]["baseline_accuracy"].tolist()
+            worsened = pair_df[pair_df["diff"] < 0]["baseline_accuracy"].tolist()
+            if improved or worsened:
+                plt.figure()
+                if improved:
+                    plt.hist(improved, alpha=0.6, label="Improved", bins=10)
+                if worsened:
+                    plt.hist(worsened, alpha=0.6, label="Worsened", bins=10)
+                plt.title("Baseline accuracy: improved vs worsened")
+                plt.xlabel("Baseline accuracy")
+                plt.ylabel("Count")
+                plt.legend()
+                plt.tight_layout()
+                out = os.path.join(results_dir, "accuracy_groups.png")
+                plt.savefig(out, dpi=160)
+                plt.close()
+                plots["accuracy_groups"] = f"/static/{RESULTS_DIRNAME}/accuracy_groups.png"
+
+    # Counterbalance: accuracy by condition order
+    if counterbalance_stats and len(counterbalance_stats) >= 2:
+        orders = [o for o in ["AB", "BA"] if o in counterbalance_stats]
+        ai_acc_vals = [counterbalance_stats[o].get("ai_accuracy_mean") for o in orders if counterbalance_stats[o].get("ai_accuracy_mean") is not None]
+        if len(orders) == len(ai_acc_vals) and ai_acc_vals:
+            out = os.path.join(results_dir, "counterbalance_accuracy.png")
+            _make_bar_plot(orders, ai_acc_vals, "AI accuracy by condition order", "Accuracy (0–1)", out)
+            plots["counterbalance_accuracy"] = f"/static/{RESULTS_DIRNAME}/counterbalance_accuracy.png"
+
+    if not participants.empty and "age_group" in participants.columns:
+        counts = participants["age_group"].fillna("").astype(str).str.strip()
+        counts = counts[counts != ""].value_counts()
+        if not counts.empty:
+            out = os.path.join(results_dir, "age_group_distribution.png")
+            _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "Participant age group distribution", "Count", out)
+            plots["age_group_distribution"] = f"/static/{RESULTS_DIRNAME}/age_group_distribution.png"
+
+    if not participants.empty and "background" in participants.columns:
+        counts = participants["background"].fillna("").astype(str).str.strip()
+        counts = counts[counts != ""].value_counts()
+        if not counts.empty:
+            out = os.path.join(results_dir, "background_distribution.png")
+            _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "Participant background distribution", "Count", out)
+            plots["background_distribution"] = f"/static/{RESULTS_DIRNAME}/background_distribution.png"
+
+    if not participants.empty and "ai_familiarity" in participants.columns:
+        counts = participants["ai_familiarity"].fillna("").astype(str).str.strip()
+        counts = counts[counts != ""].value_counts()
+        if not counts.empty:
+            out = os.path.join(results_dir, "ai_familiarity_distribution.png")
+            _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "AI familiarity distribution", "Count", out)
+            plots["ai_familiarity_distribution"] = f"/static/{RESULTS_DIRNAME}/ai_familiarity_distribution.png"
+
+    if not participants.empty and "finance_familiarity" in participants.columns:
+        counts = participants["finance_familiarity"].fillna("").astype(str).str.strip()
+        counts = counts[counts != ""].value_counts()
+        if not counts.empty:
+            out = os.path.join(results_dir, "finance_familiarity_distribution.png")
+            _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "Finance familiarity distribution", "Count", out)
+            plots["finance_familiarity_distribution"] = f"/static/{RESULTS_DIRNAME}/finance_familiarity_distribution.png"
+
+    # Condition order distribution
+    if not participants.empty and "condition_order" in participants.columns:
+        counts = participants["condition_order"].fillna("").astype(str).str.strip()
+        counts = counts[counts != ""].value_counts()
+        if not counts.empty:
+            out = os.path.join(results_dir, "condition_order_distribution.png")
+            _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "Condition order distribution", "Count", out)
+            plots["condition_order_distribution"] = f"/static/{RESULTS_DIRNAME}/condition_order_distribution.png"
+
+    paired_tests = {}
+    if not participant_summary.empty:
+        paired_tests["accuracy"] = _paired_stats(participant_summary, "baseline_accuracy", "ai_accuracy")
+        paired_tests["decision_time_seconds"] = _paired_stats(
+            participant_summary,
+            "baseline_avg_time_seconds",
+            "ai_avg_time_seconds",
+        )
+
+    participant_summary_preview: List[Dict[str, Any]] = []
+    if not participant_summary.empty:
+        preview_df = participant_summary.copy()
+        for col in preview_df.columns:
+            if pd.api.types.is_float_dtype(preview_df[col]):
+                preview_df[col] = preview_df[col].round(3)
+        participant_summary_preview = preview_df.to_dict(orient="records")
+
+    summary = {
+        "accuracy_by_condition": acc_by_cond,
+        "time_seconds_by_condition": time_by_cond,
+        "trust_by_condition": trust_by_cond,
+        "sus_by_condition": sus_by_cond,
+        "ai_followed_rate": follow_by_cond,
+        "ai_confidence_by_condition": ai_confidence_by_cond,
+        "ai_prob_approve_by_condition": ai_prob_approve_by_cond,
+        "ai_seen_rate_by_condition": ai_seen_by_cond,
+        "paired_tests": paired_tests,
+        # Extended statistics for Study 2
+        "accuracy_improvement_groups": accuracy_groups,
+        "spearman_trust_vs_ai_followed": spearman_trust_followed,
+        "ai_followed_distribution": ai_followed_dist,
+        "counterbalance_subgroup_stats": counterbalance_stats,
+        "comments": comments,
+        "participant_summary_preview": participant_summary_preview,
+        "n_participants": int(len(participants)) if not participants.empty else 0,
+        "n_completed_participants": int(participants["completed"].sum()) if (not participants.empty and "completed" in participants.columns) else 0,
+        "n_decisions": int(len(decisions)),
+        "n_surveys": int(len(surveys_raw)),
+        "n_events": int(len(events)),
+    }
+
+    return {
+        "has_data": True,
+        "message": "",
+        "summary": summary,
+        "plots": plots,
+    }
+
+===== FILE: app/explanations.py =====
+# app/explanations.py
+from __future__ import annotations
+
+from typing import Any
+
+
+def format_feature_value(feature: str, value: Any) -> str:
+    if value is None:
+        return ""
+
+    if feature in ["person_income", "loan_amnt"]:
+        try:
+            return f"${float(value):,.0f}"
+        except Exception:
+            return str(value)
+
+    if feature == "loan_int_rate":
+        try:
+            return f"{float(value):.2f}%"
+        except Exception:
+            return str(value)
+
+    if feature in ["person_age", "person_emp_exp"]:
+        try:
+            return f"{int(float(value))}"
+        except Exception:
+            return str(value)
+
+    text = str(value).strip()
+
+    if text.upper() == "YES":
+        return "Yes"
+
+    if text.upper() == "NO":
+        return "No"
+
+    if feature == "loan_intent":
+        mapping = {
+            "HOMEIMPROVEMENT": "Home improvement",
+            "VENTURE": "Business investment",
+            "EDUCATION": "Education",
+            "MEDICAL": "Medical expenses",
+            "PERSONAL": "Personal expenses",
+            "DEBTCONSOLIDATION": "Debt consolidation",
+        }
+        return mapping.get(text.upper(), text.title())
+
+    if feature == "person_home_ownership":
+        mapping = {
+            "RENT": "Renting",
+            "OWN": "Owns home",
+            "MORTGAGE": "Mortgage",
+            "OTHER": "Other",
+        }
+        return mapping.get(text.upper(), text.title())
+
+    return text.replace("_", " ").title()
+
+
+def build_reason(feature: str, value: Any, recommendation: str) -> str:
+    formatted_value = format_feature_value(feature, value)
+
+    if feature == "person_income":
+        if recommendation == "Approve":
+            return "The applicant’s income level supported the recommendation."
+        return "The applicant’s income level increased financial risk."
+
+    if feature == "loan_int_rate":
+        if recommendation == "Approve":
+            return "The interest rate supported the recommendation."
+        return "The interest rate increased the estimated repayment burden."
+
+    if feature == "credit_score":
+        if recommendation == "Approve":
+            return "The applicant’s credit score supported approval."
+        return "The applicant’s credit score increased repayment risk."
+
+    if feature == "previous_loan_defaults_on_file":
+        if str(value).strip().lower() == "yes":
+            return "Previous repayment problems increased the estimated loan risk."
+        return "No previous repayment problems supported approval."
+
+    if feature == "loan_amnt":
+        if recommendation == "Approve":
+            return "The requested loan amount supported the recommendation."
+        return "The requested loan amount increased repayment risk."
+
+    if feature == "person_emp_exp":
+        if recommendation == "Approve":
+            return "Employment experience supported the recommendation."
+        return "Limited employment experience increased uncertainty."
+
+    if feature == "person_home_ownership":
+        return f"Housing situation ({formatted_value}) influenced the recommendation."
+
+    if feature == "loan_intent":
+        return f"The loan purpose ({formatted_value}) influenced the recommendation."
+
+    if feature == "person_education":
+        return f"Education level ({formatted_value}) influenced the recommendation."
+
+    if feature == "person_age":
+        return "Applicant age influenced the recommendation."
+
+    return f"{feature.replace('_', ' ').title()} influenced the recommendation."
+
+===== FILE: app/ai.py =====
+# app/ai.py
+
+from __future__ import annotations
+
+import os
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
+
+import joblib
+import numpy as np
+
+from app.config import MODEL_PATH
+from app.explanations import build_reason
+
+_MODEL = None
+
+DISPLAY_NAMES = {
+    "person_age": "Applicant age",
+    "person_education": "Education level",
+    "person_income": "Annual income",
+    "person_emp_exp": "Years of work experience",
+    "person_home_ownership": "Housing situation",
+    "loan_amnt": "Requested loan amount",
+    "loan_intent": "Purpose of the loan",
+    "loan_int_rate": "Loan interest rate",
+    "credit_score": "Credit score",
+    "previous_loan_defaults_on_file": "Previous loan repayment problems",
+}
+
+
+def _load_model():
+    global _MODEL
+
+    if _MODEL is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"Model file not found at {MODEL_PATH}. "
+                f"Run python -m app.model_train first."
+            )
+
+        _MODEL = joblib.load(MODEL_PATH)
+
+    return _MODEL
+
+
+def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
+    preprocess = None
+    clf = None
+
+    if hasattr(model, "named_steps"):
+        preprocess = model.named_steps.get("preprocess")
+        clf = model.named_steps.get("clf") or model.named_steps.get("classifier")
+    else:
+        clf = model
+
+    return preprocess, clf
+
+
+def _get_missing_original_features(
+    X_dict: Dict[str, Any]
+) -> set:
+
+    missing = set()
+
+    for key, val in X_dict.items():
+
+        if val is None:
+            missing.add(key.lower())
+            continue
+
+        text = str(val).strip().lower()
+
+        if text in (
+            "unknown",
+            "not available",
+            "nan",
+            "",
+        ):
+            missing.add(key.lower())
+
+    return missing
+
+
+def _base_feature_name(transformed_name: str) -> str:
+    clean = (
+        transformed_name.split("__", 1)[1]
+        if "__" in transformed_name
+        else transformed_name
+    )
+
+    for original in DISPLAY_NAMES.keys():
+        if clean == original or clean.startswith(original + "_"):
+            return original
+
+    return clean
+
+
+def _aggregate_shap_by_feature(
+    feat_names: List[str],
+    values: np.ndarray,
+    missing_features: set,
+) -> List[Tuple[str, float]]:
+
+    aggregated: Dict[str, float] = defaultdict(float)
+
+    for fname, val in zip(feat_names, values.tolist()):
+
+        val = float(val)
+
+        if abs(val) < 1e-9:
+            continue
+
+        if "unknown" in fname.lower():
+            continue
+
+        base = _base_feature_name(fname).strip().lower()
+
+        if base in missing_features:
+            continue
+
+        aggregated[base] += val
+
+    return sorted(
+        aggregated.items(),
+        key=lambda fv: abs(fv[1]),
+        reverse=True,
+    )
+
+
+def _compute_shap_contributions(
+    model,
+    X_dict: Dict[str, Any],
+) -> List[Tuple[str, float]]:
+
+    try:
+        import pandas as pd
+        import shap
+
+        preprocess, clf = _get_pipeline_parts(model)
+
+        if clf is None:
+            return []
+
+        X_df = pd.DataFrame([X_dict])
+
+        if preprocess is not None:
+
+            X_trans = preprocess.transform(X_df)
+
+            if hasattr(X_trans, "toarray"):
+                X_trans = X_trans.toarray()
+
+            X_trans = np.asarray(X_trans)
+
+            if hasattr(preprocess, "get_feature_names_out"):
+                feat_names = list(
+                    preprocess.get_feature_names_out()
+                )
+            else:
+                feat_names = [
+                    f"f{i}"
+                    for i in range(X_trans.shape[1])
+                ]
+
+        else:
+            X_trans = X_df.values
+            feat_names = list(X_df.columns)
+
+        explainer = shap.TreeExplainer(clf)
+
+        shap_values = explainer.shap_values(X_trans)
+
+        if isinstance(shap_values, list) and len(shap_values) == 2:
+            values = np.asarray(shap_values[1][0])
+
+        elif (
+            isinstance(shap_values, np.ndarray)
+            and shap_values.ndim == 3
+        ):
+            values = np.asarray(shap_values[0, :, 1])
+
+        else:
+            values = np.asarray(shap_values).reshape(-1)
+
+        missing_features = _get_missing_original_features(X_dict)
+
+        return _aggregate_shap_by_feature(
+            feat_names=feat_names,
+            values=values,
+            missing_features=missing_features,
+        )
+
+    except ImportError:
+        return _compute_importance_contributions(
+            model,
+            X_dict,
+        )
+
+    except Exception as e:
+        print(f"SHAP error: {e}")
+        return []
+
+
+def _compute_importance_contributions(
+    model,
+    X_dict: Dict[str, Any],
+) -> List[Tuple[str, float]]:
+
+    try:
+        import pandas as pd
+
+        preprocess, clf = _get_pipeline_parts(model)
+
+        if clf is None:
+            return []
+
+        if not hasattr(clf, "feature_importances_"):
+            return []
+
+        X_df = pd.DataFrame([X_dict])
+
+        if preprocess is not None:
+
+            X_trans = preprocess.transform(X_df)
+
+            if hasattr(preprocess, "get_feature_names_out"):
+                feat_names = list(
+                    preprocess.get_feature_names_out()
+                )
+            else:
+                feat_names = [
+                    f"f{i}"
+                    for i in range(X_trans.shape[1])
+                ]
+
+        else:
+            feat_names = list(X_df.columns)
+
+        missing_features = _get_missing_original_features(X_dict)
+
+        return _aggregate_shap_by_feature(
+            feat_names=feat_names,
+            values=np.asarray(clf.feature_importances_),
+            missing_features=missing_features,
+        )
+
+    except Exception as e:
+        print(f"Importance fallback error: {e}")
+        return []
+
+
+def _weight_label(score: float) -> str:
+
+    score = abs(score)
+
+    if score >= 0.15:
+        return "high"
+
+    if score >= 0.06:
+        return "medium"
+
+    return "low"
+
+
+def _build_explanation(
+    contribs: List[Tuple[str, float]],
+    recommendation: str,
+    features: Dict[str, Any],
+    max_items: int = 3,
+    min_shap_threshold: float = 0.01,
+) -> List[Dict[str, str]]:
+
+    if not contribs:
+        return []
+
+    contribs = [
+        (f, c)
+        for (f, c) in contribs
+        if abs(c) >= min_shap_threshold
+    ]
+
+    if not contribs:
+        return []
+
+    if recommendation == "Approve":
+        filtered = [
+            (f, c)
+            for (f, c) in contribs
+            if c > 0
+        ]
+    else:
+        filtered = [
+            (f, c)
+            for (f, c) in contribs
+            if c < 0
+        ]
+
+    if len(filtered) < max_items:
+        filtered = contribs
+
+    explanations: List[Dict[str, str]] = []
+
+    for feature, contribution in filtered[:max_items]:
+
+        weight = _weight_label(contribution)
+
+        explanations.append({
+            "factor": DISPLAY_NAMES.get(
+                feature,
+                feature.replace("_", " ").title(),
+            ),
+
+            "text": build_reason(
+                feature=feature,
+                value=features.get(feature),
+                recommendation=recommendation,
+            ),
+
+            "weight": weight,
+        })
+
+    return explanations
+
+
+def get_ai_advice(
+    features: Dict[str, Any],
+    approval_threshold: float = 0.50,
+) -> Dict[str, Any]:
+
+    model = _load_model()
+
+    import pandas as pd
+
+    X_df = pd.DataFrame([features])
+
+    probas = model.predict_proba(X_df)[0]
+
+    classes = getattr(model, "classes_", None)
+
+    if classes is None and hasattr(model, "named_steps"):
+
+        _, clf = _get_pipeline_parts(model)
+
+        classes = getattr(clf, "classes_", None)
+
+    if classes is not None and 1 in list(classes):
+
+        idx_approve = int(
+            np.where(np.asarray(classes) == 1)[0][0]
+        )
+
+        prob_approve = float(probas[idx_approve])
+
+    else:
+        prob_approve = float(probas[1])
+
+    recommendation = (
+        "Approve"
+        if prob_approve >= approval_threshold
+        else "Reject"
+    )
+
+    confidence = (
+        prob_approve
+        if recommendation == "Approve"
+        else 1.0 - prob_approve
+    )
+
+    contribs = _compute_shap_contributions(
+        model=model,
+        X_dict=features,
+    )
+
+    explanation = _build_explanation(
+        contribs=contribs,
+        recommendation=recommendation,
+        features=features,
+        max_items=3,
+    )
+
+    return {
+        "recommendation": recommendation,
+        "confidence": round(confidence, 3),
+        "prob_approve": round(prob_approve, 3),
+        "explanation": explanation,
+    }
+
+===== FILE: app/__init__.py =====
+
+
+===== FILE: app/logger.py =====
+# app/logger.py
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from app.db import get_conn, init_db
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+init_db()
+
+
+def log_participant(
+    participant_id: str,
+    age_group: str,
+    background: str,
+    ai_familiarity: str,
+    finance_familiarity: str,
+    condition_order: str = "AB",
+):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO participants (
+            participant_id, ts_utc, age_group, background,
+            ai_familiarity, finance_familiarity, condition_order, completed
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        ON CONFLICT(participant_id) DO UPDATE SET
+            age_group = excluded.age_group,
+            background = excluded.background,
+            ai_familiarity = excluded.ai_familiarity,
+            finance_familiarity = excluded.finance_familiarity,
+            condition_order = excluded.condition_order
+        """,
+        (
+            str(participant_id),
+            _now_utc_iso(),
+            str(age_group),
+            str(background),
+            str(ai_familiarity),
+            str(finance_familiarity),
+            str(condition_order),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_participant_completed(participant_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO participants (
+            participant_id, ts_utc, age_group, background, ai_familiarity, finance_familiarity, completed
+        )
+        VALUES (?, ?, '', '', '', '', 1)
+        ON CONFLICT(participant_id) DO UPDATE SET
+            completed = 1
+        """,
+        (
+            str(participant_id),
+            _now_utc_iso(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_event(
+    participant_id: str,
+    condition: str,
+    case_id: Optional[Any],
+    event: str,
+    payload: Dict[str, Any],
+):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO events (ts_utc, participant_id, condition, case_id, event, payload_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            _now_utc_iso(),
+            str(participant_id),
+            str(condition),
+            None if case_id is None else str(case_id),
+            str(event),
+            json.dumps(payload, ensure_ascii=False),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_decision(
+    participant_id: str,
+    condition: str,
+    case_id: Any,
+    decision: str,
+    ground_truth: int,
+    correct: int,
+    time_ms: Optional[int],
+    ai_followed: Optional[int],
+    ai_seen: Optional[int],
+    ai_recommendation: Optional[str] = None,
+    ai_confidence: Optional[float] = None,
+    ai_prob_approve: Optional[float] = None,
+):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO decisions (
+            ts_utc, participant_id, condition, case_id,
+            decision, ground_truth, correct, time_ms,
+            ai_followed, ai_seen,
+            ai_recommendation, ai_confidence, ai_prob_approve
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            _now_utc_iso(),
+            str(participant_id),
+            str(condition),
+            str(case_id),
+            str(decision),
+            int(ground_truth),
+            int(correct),
+            None if time_ms is None else int(time_ms),
+            None if ai_followed is None else int(ai_followed),
+            None if ai_seen is None else int(ai_seen),
+            None if ai_recommendation is None else str(ai_recommendation),
+            None if ai_confidence is None else float(ai_confidence),
+            None if ai_prob_approve is None else float(ai_prob_approve),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_survey(participant_id: str, condition: str, answers: Dict[str, Any]):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO surveys (ts_utc, participant_id, condition, answers_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            _now_utc_iso(),
+            str(participant_id),
+            str(condition),
+            json.dumps(answers, ensure_ascii=False),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+===== FILE: app/data_prep.py =====
+# app/data_prep.py
+
+from __future__ import annotations
+
+import os
+from typing import List, Tuple
+
+import pandas as pd
+
+from app.config import (
+    DATA_PATH,
+    CASES_FOR_STUDY_PATH,
+    TARGET_COL,
+    DROP_COLS_FOR_UI,
+)
+
+STUDY_SET_SIZE = 120
+BORDERLINE_PROB_LOW = 0.30
+BORDERLINE_PROB_HIGH = 0.70
+RANDOM_STATE = 42
+
+
+def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "Unnamed: 0" in df.columns:
+        df = df.drop(columns=["Unnamed: 0"])
+
+    if "loan_status" in df.columns and TARGET_COL not in df.columns:
+        df[TARGET_COL] = df["loan_status"].astype(int)
+
+    if TARGET_COL not in df.columns:
+        raise ValueError(f"Target column '{TARGET_COL}' could not be created or found.")
+
+    df = df.drop_duplicates().reset_index(drop=True)
+
+    if "case_id" not in df.columns:
+        df.insert(0, "case_id", range(1, len(df) + 1))
+
+    for col in df.columns:
+        if col in (TARGET_COL, "case_id"):
+            continue
+
+        if df[col].dtype.kind in "biufc":
+            df[col] = df[col].fillna(df[col].median())
+        else:
+            df[col] = df[col].fillna("Unknown")
+
+    df[TARGET_COL] = df[TARGET_COL].astype(int)
+
+    return df
+
+
+def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+    exclude = set(["case_id", TARGET_COL] + DROP_COLS_FOR_UI)
+    feature_cols = [c for c in df.columns if c not in exclude]
+    numeric_cols = [c for c in feature_cols if df[c].dtype.kind in "biufc"]
+    categorical_cols = [c for c in feature_cols if c not in numeric_cols]
+
+    return numeric_cols, categorical_cols
+
+
+def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    from xgboost import XGBClassifier
+
+    numeric_cols, categorical_cols = _split_columns(df)
+
+    X = df[numeric_cols + categorical_cols]
+    y = df[TARGET_COL].astype(int)
+
+    preprocess = ColumnTransformer([
+        ("num", StandardScaler(), numeric_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols),
+    ])
+
+    clf = XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        eval_metric="logloss",
+        random_state=RANDOM_STATE,
+    )
+
+    model = Pipeline([
+        ("preprocess", preprocess),
+        ("clf", clf),
+    ])
+
+    model.fit(X, y)
+
+    scored = df.copy()
+    scored["_prob"] = model.predict_proba(X)[:, 1]
+
+    borderline = scored[
+        (scored["_prob"] >= BORDERLINE_PROB_LOW)
+        & (scored["_prob"] <= BORDERLINE_PROB_HIGH)
+    ].copy()
+
+    approved = borderline[borderline[TARGET_COL] == 1]
+    rejected = borderline[borderline[TARGET_COL] == 0]
+
+    half = STUDY_SET_SIZE // 2
+    n_approve = min(half, len(approved))
+    n_reject = min(half, len(rejected))
+
+    selected_parts = []
+
+    if n_approve > 0:
+        selected_parts.append(approved.sample(n=n_approve, random_state=RANDOM_STATE))
+
+    if n_reject > 0:
+        selected_parts.append(rejected.sample(n=n_reject, random_state=RANDOM_STATE))
+
+    selected = pd.concat(selected_parts, axis=0) if selected_parts else pd.DataFrame()
+
+    remaining = STUDY_SET_SIZE - len(selected)
+
+    if remaining > 0:
+        selected_ids = set(selected["case_id"].tolist()) if not selected.empty else set()
+        fallback = scored[~scored["case_id"].isin(selected_ids)].copy()
+        fallback["_distance_to_boundary"] = (fallback["_prob"] - 0.5).abs()
+        fallback = fallback.sort_values("_distance_to_boundary").head(remaining)
+        selected = pd.concat([selected, fallback], axis=0)
+
+    selected = selected.sample(frac=1.0, random_state=123).reset_index(drop=True)
+
+    print(f"Study set: {len(selected)} cases")
+    print(f"Approved: {int(selected[TARGET_COL].sum())}, Rejected: {int((selected[TARGET_COL] == 0).sum())}")
+    print(f"Mean prob: {selected['_prob'].mean():.3f}")
+
+    selected = selected.drop(columns=["_prob", "_distance_to_boundary"], errors="ignore")
+
+    return selected
+
+
+def _drop_sensitive_and_unused_cols(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    for col in DROP_COLS_FOR_UI:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    return df
+
+
+def main() -> None:
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Could not find dataset at: {DATA_PATH}")
+
+    df = pd.read_csv(DATA_PATH)
+    df = _basic_clean(df)
+    study_df = _select_study_cases(df)
+    study_df = _drop_sensitive_and_unused_cols(study_df)
+
+    os.makedirs(os.path.dirname(CASES_FOR_STUDY_PATH), exist_ok=True)
+    study_df.to_csv(CASES_FOR_STUDY_PATH, index=False)
+
+    print(f"Saved study cases to: {CASES_FOR_STUDY_PATH}")
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: app/main.py =====
+# app/main.py
+from __future__ import annotations
+
+import os
+import time
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+
+from app.ai import get_ai_advice
+from app.analysis import generate_results
+from app.config import (
+    ADMIN_PASSWORD,
+    APPROVAL_THRESHOLD,
+    CASES_FOR_STUDY_PATH,
+    CASES_PER_PARTICIPANT,
+    DATA_PATH,
+    DROP_COLS_FOR_UI,
+    PARTICIPANT_SUMMARY_PATH,
+    SECRET_KEY,
+    SQLITE_DB_PATH,
+    TARGET_COL,
+    TOTAL_CASES_PER_PARTICIPANT,
+)
+from app.db import (
+    db_clear_all,
+    db_count_rows,
+    db_delete_participant,
+    db_get_participant_count,
+    db_get_participant_stats,
+    init_db,
+)
+from app.logger import (
+    log_decision,
+    log_event,
+    log_participant,
+    log_survey,
+    mark_participant_completed,
+)
+
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
+app.secret_key = SECRET_KEY
+
+FIELD_DISPLAY_NAMES: Dict[str, str] = {
+    "person_age": "Applicant Age",
+    "person_education": "Education Level",
+    "person_income": "Annual Income",
+    "person_emp_exp": "Years of Work Experience",
+    "person_home_ownership": "Housing Situation",
+    "loan_amnt": "Requested Loan Amount",
+    "loan_intent": "Purpose of the Loan",
+    "loan_int_rate": "Loan Interest Rate",
+    "credit_score": "Credit Score",
+    "previous_loan_defaults_on_file": "Previous Loan Repayment Problems",
+}
+
+FIELD_DESCRIPTIONS: Dict[str, str] = {
+    "person_age": "The age of the applicant.",
+    "person_education": "The applicant's highest completed education level.",
+    "person_income": "The applicant's yearly income before taxes.",
+    "person_emp_exp": "How many years of work experience the applicant has.",
+    "person_home_ownership": "The applicant's current housing situation, such as renting, owning, or having a mortgage.",
+    "loan_amnt": "The amount of money the applicant wants to borrow.",
+    "loan_intent": "The main purpose of the loan.",
+    "loan_int_rate": "The interest rate connected to the loan. A higher interest rate makes repayment more expensive.",
+    "credit_score": "A score that represents the applicant's creditworthiness. A higher score usually indicates lower repayment risk.",
+    "previous_loan_defaults_on_file": "Shows whether the applicant has previously failed to repay loans.",
+}
+
+FIELD_ORDER = [
+    "person_age",
+    "person_education",
+    "person_income",
+    "person_emp_exp",
+    "person_home_ownership",
+    "loan_intent",
+    "loan_amnt",
+    "loan_int_rate",
+    "credit_score",
+    "previous_loan_defaults_on_file",
+]
+
+
+def _load_cases() -> pd.DataFrame:
+    if os.path.exists(CASES_FOR_STUDY_PATH):
+        df = pd.read_csv(CASES_FOR_STUDY_PATH)
+    else:
+        df = pd.read_csv(DATA_PATH)
+
+    if "loan_status" in df.columns and TARGET_COL not in df.columns:
+        df[TARGET_COL] = df["loan_status"].astype(int)
+
+    if TARGET_COL not in df.columns:
+        raise ValueError(f"Target column '{TARGET_COL}' not found in dataset.")
+
+    if "case_id" not in df.columns:
+        df = df.copy()
+        df["case_id"] = range(1, len(df) + 1)
+
+    return df
+
+
+CASES_DF = _load_cases()
+
+
+def _pick_cases_for_participant() -> Dict[str, List[Dict[str, Any]]]:
+    seed = session.get("seed")
+    if seed is None:
+        seed = int(time.time())
+        session["seed"] = seed
+
+    n_needed = TOTAL_CASES_PER_PARTICIPANT
+
+    if len(CASES_DF) < n_needed:
+        df_sample = CASES_DF.sample(n=n_needed, random_state=seed, replace=True).reset_index(drop=True)
+    else:
+        df_sample = CASES_DF.sample(n=n_needed, random_state=seed).reset_index(drop=True)
+
+    cases = df_sample.to_dict(orient="records")
+
+    return {
+        "baseline": cases[:CASES_PER_PARTICIPANT],
+        "ai": cases[CASES_PER_PARTICIPANT:CASES_PER_PARTICIPANT * 2],
+    }
+
+
+def _ui_case_view(case_row: Dict[str, Any]) -> Dict[str, Any]:
+    view = dict(case_row)
+    view.pop(TARGET_COL, None)
+    view.pop("case_id", None)
+
+    for col in DROP_COLS_FOR_UI:
+        view.pop(col, None)
+
+    ordered = {k: view[k] for k in FIELD_ORDER if k in view}
+
+    for k, v in view.items():
+        if k not in ordered:
+            ordered[k] = v
+
+    return ordered
+
+
+def _features_for_model(case_row: Dict[str, Any]) -> Dict[str, Any]:
+    feats = dict(case_row)
+    feats.pop(TARGET_COL, None)
+    feats.pop("case_id", None)
+    feats.pop("loan_status", None)
+    return feats
+
+
+def _require_admin():
+    if not session.get("is_admin"):
+        return redirect(url_for("admin_login"))
+    return None
+
+
+def _get_condition_order() -> Tuple[str, str]:
+    count = db_get_participant_count()
+    if count % 2 == 0:
+        return "AB", "baseline"
+    return "BA", "ai"
+
+
+def _get_next_block(current_block: str, condition_order: str) -> Optional[str]:
+    if condition_order == "AB":
+        return "ai" if current_block == "baseline" else None
+
+    return "baseline" if current_block == "ai" else None
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
+
+
+@app.route("/start", methods=["POST"])
+def start():
+    participant_id = request.form.get("participant_id", "").strip()
+    if not participant_id:
+        participant_id = f"p_{uuid.uuid4().hex[:8]}"
+
+    age_group = request.form.get("age_group", "").strip()
+    background = request.form.get("background", "").strip()
+    ai_familiarity = request.form.get("ai_familiarity", "").strip()
+    finance_familiarity = request.form.get("finance_familiarity", "").strip()
+
+    condition_order, first_block = _get_condition_order()
+
+    session.clear()
+    session["participant_id"] = participant_id
+    session["condition_order"] = condition_order
+    session["block"] = first_block
+    session["case_index"] = 0
+    session["cases_by_block"] = _pick_cases_for_participant()
+    session["started_at"] = time.time()
+    session["guidelines_ok"] = False
+    session["guidelines_shown_logged"] = False
+
+    log_participant(
+        participant_id=participant_id,
+        age_group=age_group,
+        background=background,
+        ai_familiarity=ai_familiarity,
+        finance_familiarity=finance_familiarity,
+        condition_order=condition_order,
+    )
+
+    log_event(
+        participant_id,
+        first_block,
+        case_id=None,
+        event="session_start",
+        payload={"condition_order": condition_order},
+    )
+
+    return redirect(url_for("guidelines"))
+
+
+@app.route("/guidelines", methods=["GET", "POST"])
+def guidelines():
+    participant_id = session.get("participant_id")
+
+    if not participant_id:
+        return redirect(url_for("index"))
+
+    block = session.get("block", "baseline")
+
+    if request.method == "GET":
+        if not session.get("guidelines_shown_logged"):
+            log_event(participant_id, block, case_id=None, event="guidelines_shown", payload={})
+            session["guidelines_shown_logged"] = True
+
+        return render_template("guidelines.html", approval_threshold=APPROVAL_THRESHOLD)
+
+    session["guidelines_ok"] = True
+    log_event(participant_id, block, case_id=None, event="guidelines_accepted", payload={})
+
+    return redirect(url_for("task"))
+
+
+@app.route("/transition", methods=["GET"])
+def transition():
+    participant_id = session.get("participant_id")
+
+    if not participant_id:
+        return redirect(url_for("index"))
+
+    if not session.get("guidelines_ok"):
+        return redirect(url_for("guidelines"))
+
+    block = session.get("block")
+
+    if block not in ("baseline", "ai"):
+        return redirect(url_for("task"))
+
+    return render_template("transition.html", next_condition=block)
+
+
+@app.route("/task", methods=["GET"])
+def task():
+    participant_id = session.get("participant_id")
+    block = session.get("block", "baseline")
+    condition_order = session.get("condition_order", "AB")
+    cases_by_block = session.get("cases_by_block", {})
+    cases = cases_by_block.get(block, [])
+    idx = session.get("case_index", 0)
+
+    if not participant_id or not cases:
+        return redirect(url_for("index"))
+
+    if not session.get("guidelines_ok"):
+        return redirect(url_for("guidelines"))
+
+    if idx >= len(cases):
+        next_block = _get_next_block(block, condition_order)
+
+        if next_block is not None:
+            log_event(participant_id, block, case_id=None, event=f"{block}_block_complete", payload={})
+            session["block"] = next_block
+            session["case_index"] = 0
+            log_event(participant_id, next_block, case_id=None, event=f"{next_block}_block_start", payload={})
+
+            return redirect(url_for("transition"))
+
+        return redirect(url_for("survey"))
+
+    case_row = cases[idx]
+    case_id = case_row.get("case_id")
+    case_for_ui = _ui_case_view(case_row)
+
+    ai_payload: Optional[Dict[str, Any]] = None
+
+    if block == "ai":
+        ai_payload = get_ai_advice(
+            features=_features_for_model(case_row),
+            approval_threshold=APPROVAL_THRESHOLD,
+        )
+
+    log_event(
+        participant_id,
+        block,
+        case_id=case_id,
+        event="case_shown",
+        payload={"index": idx, "block": block},
+    )
+
+    return render_template(
+        "task.html",
+        participant_id=participant_id,
+        condition=block,
+        case_id=case_id,
+        case=case_for_ui,
+        ai=ai_payload,
+        case_number=idx + 1,
+        total_cases=len(cases),
+        field_descriptions=FIELD_DESCRIPTIONS,
+        field_display_names=FIELD_DISPLAY_NAMES,
+    )
+
+
+@app.route("/submit_decision", methods=["POST"])
+def submit_decision():
+    participant_id = session.get("participant_id")
+    block = session.get("block", "baseline")
+    condition_order = session.get("condition_order", "AB")
+    cases_by_block = session.get("cases_by_block", {})
+    cases = cases_by_block.get(block, [])
+    idx = session.get("case_index", 0)
+
+    if not participant_id or not cases:
+        return jsonify({"ok": False, "error": "No active session"}), 400
+
+    if not session.get("guidelines_ok"):
+        return jsonify({"ok": False, "error": "Guidelines not accepted"}), 400
+
+    if idx >= len(cases):
+        return jsonify({"ok": False, "error": "No more cases"}), 400
+
+    payload = request.get_json(force=True) or {}
+    case_id_from_client = payload.get("case_id")
+    decision = payload.get("decision")
+    time_ms = payload.get("time_ms")
+
+    if decision not in ("Approve", "Reject"):
+        return jsonify({"ok": False, "error": "Invalid decision"}), 400
+
+    current_case = cases[idx]
+    current_case_id = current_case.get("case_id")
+
+    if str(case_id_from_client) != str(current_case_id):
+        return jsonify({"ok": False, "error": "Case mismatch"}), 400
+
+    gt = int(current_case.get(TARGET_COL))
+    correct = int((decision == "Approve" and gt == 1) or (decision == "Reject" and gt == 0))
+
+    ai_recommendation = None
+    ai_confidence = None
+    ai_prob_approve = None
+
+    if block == "ai":
+        ai_payload = get_ai_advice(
+            features=_features_for_model(current_case),
+            approval_threshold=APPROVAL_THRESHOLD,
+        )
+        ai_recommendation = ai_payload.get("recommendation")
+        ai_confidence = ai_payload.get("confidence")
+        ai_prob_approve = ai_payload.get("prob_approve")
+
+    log_decision(
+        participant_id=participant_id,
+        condition=block,
+        case_id=current_case_id,
+        decision=decision,
+        ground_truth=gt,
+        correct=correct,
+        time_ms=time_ms,
+        ai_followed=payload.get("ai_followed"),
+        ai_seen=payload.get("ai_seen"),
+        ai_recommendation=ai_recommendation,
+        ai_confidence=ai_confidence,
+        ai_prob_approve=ai_prob_approve,
+    )
+
+    session["case_index"] = idx + 1
+
+    if session["case_index"] >= len(cases):
+        next_block = _get_next_block(block, condition_order)
+
+        if next_block is not None:
+            log_event(participant_id, block, case_id=None, event=f"{block}_block_complete", payload={})
+            session["block"] = next_block
+            session["case_index"] = 0
+            log_event(participant_id, next_block, case_id=None, event=f"{next_block}_block_start", payload={})
+
+            return jsonify({"ok": True, "next": "/transition"})
+
+        log_event(participant_id, block, case_id=None, event=f"{block}_block_complete", payload={})
+
+        return jsonify({"ok": True, "next": "/survey"})
+
+    return jsonify({"ok": True, "next": "/task"})
+
+
+@app.route("/survey", methods=["GET", "POST"])
+def survey():
+    participant_id = session.get("participant_id")
+
+    if not participant_id:
+        return redirect(url_for("index"))
+
+    if not session.get("guidelines_ok"):
+        return redirect(url_for("guidelines"))
+
+    if request.method == "GET":
+        return render_template("survey.html")
+
+    log_survey(participant_id=participant_id, condition="post_task", answers=dict(request.form.items()))
+    mark_participant_completed(participant_id)
+    log_event(participant_id, "post_task", case_id=None, event="survey_submitted", payload={})
+    log_event(participant_id, "post_task", case_id=None, event="study_completed", payload={})
+
+    return redirect(url_for("done"))
+
+
+@app.route("/done", methods=["GET"])
+def done():
+    return render_template("done.html")
+
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "GET":
+        return render_template("admin_login.html")
+
+    pw = request.form.get("password", "")
+
+    if pw == ADMIN_PASSWORD:
+        session["is_admin"] = True
+        return redirect(url_for("admin_dashboard"))
+
+    return render_template("admin_login.html", error="Wrong password")
+
+
+@app.route("/admin/logout", methods=["GET"])
+def admin_logout():
+    session.pop("is_admin", None)
+
+    return redirect(url_for("index"))
+
+
+@app.route("/admin/dashboard", methods=["GET"])
+def admin_dashboard():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    counts = {
+        "participants": db_count_rows("participants"),
+        "decisions": db_count_rows("decisions"),
+        "events": db_count_rows("events"),
+        "surveys": db_count_rows("surveys"),
+    }
+
+    participants = db_get_participant_stats()
+
+    return render_template("admin_dashboard.html", counts=counts, participants=participants)
+
+
+@app.route("/admin/results", methods=["GET"])
+def admin_results():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    results = generate_results(app.static_folder)
+
+    return render_template("results.html", results=results)
+
+
+@app.route("/admin/download_db", methods=["GET"])
+def admin_download_db():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    if not os.path.exists(SQLITE_DB_PATH):
+        init_db()
+
+    return send_file(
+        SQLITE_DB_PATH,
+        as_attachment=True,
+        download_name="study.db",
+        mimetype="application/x-sqlite3",
+    )
+
+
+@app.route("/admin/download_participant_summary", methods=["GET"])
+def admin_download_participant_summary():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    generate_results(app.static_folder)
+
+    if not os.path.exists(PARTICIPANT_SUMMARY_PATH):
+        return redirect(url_for("admin_results"))
+
+    return send_file(
+        PARTICIPANT_SUMMARY_PATH,
+        as_attachment=True,
+        download_name="participant_summary.csv",
+        mimetype="text/csv",
+    )
+
+
+@app.route("/admin/upload_db", methods=["POST"])
+def admin_upload_db():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    uploaded_file = request.files.get("db_file")
+
+    if uploaded_file and uploaded_file.filename:
+        os.makedirs(os.path.dirname(SQLITE_DB_PATH), exist_ok=True)
+        uploaded_file.save(SQLITE_DB_PATH)
+        init_db()
+
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/clear_all", methods=["POST"])
+def admin_clear_all_route():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    db_clear_all()
+
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/delete_participant", methods=["POST"])
+def admin_delete_participant_route():
+    r = _require_admin()
+
+    if r:
+        return r
+
+    pid = request.form.get("participant_id", "").strip()
+
+    if pid:
+        db_delete_participant(pid)
+
+    return redirect(url_for("admin_dashboard"))
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+===== FILE: static/styles.css =====
+/* static/styles.css */
+
+:root {
+  --bg: hsl(222 35% 97%);
+  --surface: hsl(0 0% 100%);
+  --surface-2: hsl(220 25% 98%);
+  --text: hsl(222 35% 12%);
+  --muted: hsl(220 10% 42%);
+  --border: hsl(220 16% 90%);
+
+  --primary: hsl(230 90% 60%);
+  --primary-2: hsl(200 90% 56%);
+  --primary-hover: hsl(230 90% 54%);
+
+  --success: hsl(152 62% 38%);
+  --success-hover: hsl(152 62% 33%);
+  --danger: hsl(0 76% 54%);
+  --danger-hover: hsl(0 76% 48%);
+
+  --radius: 16px;
+  --radius-sm: 12px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 18px rgba(15, 23, 42, 0.06);
+  --shadow: 0 2px 6px rgba(15, 23, 42, 0.06), 0 18px 45px rgba(15, 23, 42, 0.10);
+
+  --ring: 0 0 0 4px hsl(230 90% 60% / 0.18);
+
+  --ease: cubic-bezier(.2,.8,.2,1);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+               "Apple Color Emoji", "Segoe UI Emoji";
+  margin: 0;
+  color: var(--text);
+  line-height: 1.55;
+  background:
+    radial-gradient(900px 520px at 12% -10%, hsl(230 90% 65% / 0.16) 0%, transparent 60%),
+    radial-gradient(760px 460px at 100% 10%, hsl(200 90% 55% / 0.12) 0%, transparent 55%),
+    radial-gradient(900px 520px at 50% 120%, hsl(152 62% 38% / 0.10) 0%, transparent 55%),
+    linear-gradient(180deg, hsl(222 35% 98%) 0%, hsl(222 35% 96%) 100%);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+}
+
+h1, h2, h3 {
+  margin: 0 0 12px 0;
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 20px;
+  font-weight: 750;
+  margin-top: 22px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 750;
+  margin-top: 18px;
+}
+
+p {
+  margin: 0 0 14px 0;
+  color: var(--text);
+}
+
+.container {
+  max-width: 980px;
+  margin: 44px auto;
+  padding: 28px;
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.88), hsl(0 0% 100% / 0.82));
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(220 16% 90% / 0.75);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .container {
+    margin: 18px 12px;
+    padding: 18px;
+  }
+
+  h1 {
+    font-size: 26px;
+  }
+}
+
+.case-box,
+.ai-panel {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 18px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+}
+
+.case-box {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.small-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+
+.case-item {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px dashed hsl(220 16% 88% / 0.9);
+  align-items: start;
+}
+
+.case-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.case-label {
+  font-weight: 750;
+  color: hsl(222 35% 14%);
+}
+
+.case-value {
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .case-item {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+.field-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.ai-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid hsl(230 90% 60% / 0.22);
+  background:
+    radial-gradient(500px 220px at 15% 10%, hsl(230 90% 60% / 0.16) 0%, transparent 60%),
+    radial-gradient(420px 220px at 95% 20%, hsl(200 90% 56% / 0.12) 0%, transparent 55%),
+    linear-gradient(180deg, hsl(0 0% 100% / 0.92), hsl(220 25% 98% / 0.88));
+}
+
+.ai-panel::before {
+  content: "";
+  position: absolute;
+  inset: -120px -140px auto auto;
+  width: 340px;
+  height: 340px;
+  background: radial-gradient(circle at 30% 30%, hsl(230 90% 60% / 0.20), transparent 62%);
+  transform: rotate(12deg);
+  pointer-events: none;
+}
+
+.ai-title {
+  font-weight: 850;
+  color: hsl(230 55% 28%);
+  margin-bottom: 8px;
+}
+
+.ai-recommendation {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.ai-confidence {
+  color: hsl(222 35% 14%);
+  font-weight: 650;
+  margin-bottom: 10px;
+}
+
+.ai-explanation {
+  margin-top: 10px;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.ai-explanation li {
+  margin-bottom: 8px;
+  color: hsl(222 35% 14%);
+}
+
+/* UPDATED EXPLANATION COLORS */
+
+.ai-explanation-inline {
+  margin-top: 14px;
+  padding: 14px 16px;
+
+  border-left: 4px solid hsl(230 90% 60% / 0.55);
+
+  border-radius:
+    0
+    var(--radius-sm)
+    var(--radius-sm)
+    0;
+
+  background: hsl(230 90% 60% / 0.06);
+}
+
+.ai-explanation-label {
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: hsl(230 55% 28%);
+  font-size: 14px;
+}
+
+.ai-explanation-inline ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.ai-explanation-inline li {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.ai-explanation-inline li strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.explanation-high {
+  background: hsl(152 62% 38% / 0.16);
+  border-color: hsl(152 62% 38% / 0.28);
+}
+
+.explanation-high strong {
+  color: hsl(152 62% 26%);
+}
+
+.explanation-medium {
+  background: hsl(45 100% 50% / 0.16);
+  border-color: hsl(45 100% 45% / 0.26);
+}
+
+.explanation-medium strong {
+  color: hsl(36 90% 30%);
+}
+
+.explanation-low {
+  background: hsl(0 76% 54% / 0.12);
+  border-color: hsl(0 76% 54% / 0.22);
+}
+
+.explanation-low strong {
+  color: hsl(0 65% 36%);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid var(--border);
+  background: hsl(0 0% 100% / 0.85);
+  color: hsl(222 35% 14%);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+button,
+.btn-secondary,
+.btn-approve,
+.btn-reject {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  transition: transform 0.08s var(--ease),
+              box-shadow 0.20s var(--ease),
+              background-color 0.15s var(--ease),
+              border-color 0.15s var(--ease),
+              filter 0.15s var(--ease);
+  box-shadow: var(--shadow-sm);
+}
+
+button:hover,
+.btn-secondary:hover,
+.btn-approve:hover,
+.btn-reject:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.10), 0 18px 40px rgba(15, 23, 42, 0.10);
+}
+
+button:active,
+.btn-secondary:active,
+.btn-approve:active,
+.btn-reject:active {
+  transform: translateY(0px);
+  box-shadow: var(--shadow-sm);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-secondary {
+  color: white;
+  background: linear-gradient(180deg, hsl(230 90% 62%), hsl(230 90% 54%));
+}
+
+.btn-secondary:hover {
+  filter: brightness(1.02);
+  text-decoration: none;
+}
+
+.btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-sm), var(--ring);
+}
+
+.btn-approve {
+  color: white;
+  background: linear-gradient(180deg, hsl(152 62% 42%), hsl(152 62% 35%));
+}
+
+.btn-approve:hover {
+  filter: brightness(1.02);
+  text-decoration: none;
+}
+
+.btn-approve:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-sm), 0 0 0 4px hsl(152 62% 38% / 0.18);
+}
+
+.btn-reject {
+  color: white;
+  background: linear-gradient(180deg, hsl(0 76% 56%), hsl(0 76% 48%));
+}
+
+.btn-reject:hover {
+  filter: brightness(1.02);
+  text-decoration: none;
+}
+
+.btn-reject:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-sm), 0 0 0 4px hsl(0 76% 54% / 0.18);
+}
+
+input[type="text"],
+input[type="password"],
+select,
+textarea {
+  width: 100%;
+  max-width: 460px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: hsl(0 0% 100% / 0.9);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s var(--ease),
+              box-shadow 0.15s var(--ease),
+              background-color 0.15s var(--ease);
+}
+
+input[type="text"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover {
+  border-color: hsl(220 14% 84%);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  border-color: hsl(230 90% 60% / 0.55);
+  box-shadow: var(--ring);
+  background: white;
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  transform: translateY(1px);
+}
+
+.progress-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.progress-bar {
+  height: 10px;
+  background: hsl(220 22% 96%);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.progress-bar > div {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), var(--primary-2));
+}
+
+.survey-question {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 14px;
+  background: hsl(0 0% 100% / 0.9);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.survey-question label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 800;
+  color: hsl(222 35% 14%);
+}
+
+.survey-options {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.survey-options label {
+  font-weight: 650;
+  color: hsl(222 35% 16%);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+th {
+  color: hsl(222 35% 14%);
+  font-weight: 900;
+  background: linear-gradient(180deg, hsl(220 25% 98%), hsl(220 22% 96%));
+}
+
+.badge {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  border: 1px solid var(--border);
+  color: hsl(222 35% 14%);
+  background: hsl(0 0% 100% / 0.85);
+}
+
+.icon-btn {
+  border: 1px solid var(--border);
+  background: hsl(0 0% 100% / 0.9);
+  color: var(--danger);
+  min-width: auto;
+  padding: 8px 10px;
+  border-radius: 12px;
+  box-shadow: none;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.icon-btn:hover {
+  background: hsl(0 76% 54% / 0.08);
+  border-color: hsl(0 40% 86%);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.mt-0 {
+  margin-top: 0;
+}
+
+.mt-10 {
+  margin-top: 10px;
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.results-section {
+  margin-top: 28px;
+}
+
+.results-card {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 22px;
+  margin-bottom: 28px;
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.92), hsl(220 25% 98% / 0.88));
+  box-shadow: var(--shadow-sm);
+}
+
+.results-card h2 {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+.results-card img {
+  display: block;
+  margin: 0 auto 18px auto;
+  max-width: 100%;
+  border-radius: 12px;
+}
+
+.metric-desc {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: hsl(220 25% 98%);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+}
+
+===== FILE: static/app.js =====
+// static/app.js
+
+let startTime = null;
+let aiSeen = false;
+let aiFollowed = null;
+
+document.addEventListener("DOMContentLoaded", function () {
+  startTime = performance.now();
+
+  const aiPanel = document.getElementById("ai-panel");
+  if (aiPanel) aiSeen = true;
+
+  document.getElementById("approve-btn")?.addEventListener("click", () => submitDecision("Approve"));
+  document.getElementById("reject-btn")?.addEventListener("click", () => submitDecision("Reject"));
+});
+
+function submitDecision(decision) {
+  const caseId = document.getElementById("case-id")?.value;
+  if (!caseId) return;
+
+  const timeMs = Math.round(performance.now() - startTime);
+
+  const aiRecEl = document.getElementById("ai-recommendation");
+  if (aiRecEl) {
+    const rec = aiRecEl.dataset.recommendation;
+    aiFollowed = (decision === rec);
+  } else {
+    aiFollowed = null;
+  }
+
+  disableButtons();
+
+  fetch("/submit_decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      case_id: caseId,
+      decision,
+      time_ms: timeMs,
+      ai_followed: aiFollowed,
+      ai_seen: aiSeen
+    })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        window.location.href = data.next || "/task";
+      } else {
+        alert(data.error || "Error");
+        enableButtons();
+      }
+    })
+    .catch(() => {
+      alert("Network error");
+      enableButtons();
+    });
+}
+
+function disableButtons() {
+  const a = document.getElementById("approve-btn");
+  const r = document.getElementById("reject-btn");
+  if (a) a.disabled = true;
+  if (r) r.disabled = true;
+}
+
+function enableButtons() {
+  const a = document.getElementById("approve-btn");
+  const r = document.getElementById("reject-btn");
+  if (a) a.disabled = false;
+  if (r) r.disabled = false;
+}
+
+===== FILE: templates/transition.html =====
+<!-- templates/transition.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Next Part</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Well done</h1>
+
+    <p>
+      You have completed the first part of the study.
+    </p>
+
+    <p>
+      You will now continue to the next part. The task is still to review loan
+      applications and choose whether each application should be
+      <strong>Approved</strong> or <strong>Rejected</strong>.
+    </p>
+
+    <p>
+      In one part of the study, AI support is shown. In the other part, you make
+      decisions without AI support. Please continue to follow the instructions
+      shown on each page.
+    </p>
+
+    <div class="button-group" style="margin-top: 20px;">
+      <a href="/task" class="btn-secondary">Continue</a>
+    </div>
+  </div>
+</body>
+</html>
+
+===== FILE: templates/index.html =====
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loan Decision Study</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>Decision-Making Study</h1>
+
+        <p>
+            In this study, you will evaluate a series of loan applications.
+            For each application, your task is to decide whether the loan should be
+            <strong>Approved</strong> or <strong>Rejected</strong>.
+        </p>
+
+        
+        <p>
+            The study has two parts: you will complete
+            <strong>12 decisions without AI support</strong>
+            and <strong>12 decisions with AI support</strong>.
+            The order of the two parts may vary between participants.
+        </p>
+
+        <p>
+            Before the first case, you will be shown a brief <strong>Guidelines</strong> page describing how to interpret the case information and, in the second part of the study, how to interpret the AI recommendation and explanation.
+        </p>
+
+        <hr />
+
+        <form action="/start" method="post">
+            <div class="survey-question">
+                <label for="participant_id">Participant ID</label>
+                <input
+                    type="text"
+                    id="participant_id"
+                    name="participant_id"
+                    placeholder="Enter your ID (or leave blank)"
+                    style="padding: 8px; width: 250px;"
+                />
+            </div>
+
+            <div class="survey-question">
+                <label for="age_group">Age group</label>
+                <select id="age_group" name="age_group" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="18-24">18-24</option>
+                    <option value="25-34">25-34</option>
+                    <option value="35-44">35-44</option>
+                    <option value="45-54">45-54</option>
+                    <option value="55+">55+</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="background">Background</label>
+                <select id="background" name="background" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="Student">Student</option>
+                    <option value="Working professional">Working professional</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="ai_familiarity">Familiarity with AI tools</label>
+                <select id="ai_familiarity" name="ai_familiarity" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="None">None</option>
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                </select>
+            </div>
+
+            <div class="survey-question">
+                <label for="finance_familiarity">Familiarity with finance or loan decisions</label>
+                <select id="finance_familiarity" name="finance_familiarity" required>
+                    <option value="" disabled selected>Select one</option>
+                    <option value="None">None</option>
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                </select>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-secondary">
+                    Start Study
+                </button>
+            </div>
+        </form>
+
+        <p class="small-text">
+            By continuing, you confirm that you understand the task and agree to participate in this study.
+        </p>
+
+        <hr />
+
+        <p class="small-text">
+          <strong>Admin only:</strong> view results and manage logs here:
+          <a href="/admin">Admin login</a>
+        </p>
+    </div>
+</body>
+</html>
+
+===== FILE: templates/survey.html =====
+<!-- templates/survey.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Post-Study Questionnaire</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+
+    <h1>Post-Task Questionnaire</h1>
+
+    <p>
+        Please answer the following questions based on your experience
+        with the system you just used.
+    </p>
+
+    <form action="/survey" method="post">
+
+        <h2>Trust in the System</h2>
+        <div class="small-text">1 = Strongly disagree, 5 = Strongly agree</div>
+
+        <div class="survey-question">
+            <label>The system's recommendations were trustworthy.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q1" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="survey-question">
+            <label>I felt confident relying on the system during the task.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q2" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="survey-question">
+            <label>The system helped me understand the decision context.</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label><input type="radio" name="trust_q3" value="{{ i }}" required> {{ i }}</label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <h2>System Usability (SUS)</h2>
+        <div class="small-text">1 = Strongly disagree, 5 = Strongly agree</div>
+
+        {% set sus_questions = [
+            "I think that I would like to use this system frequently.",
+            "I found the system unnecessarily complex.",
+            "I thought the system was easy to use.",
+            "I think that I would need the support of a technical person to use this system.",
+            "I found the various functions in this system were well integrated.",
+            "I thought there was too much inconsistency in this system.",
+            "I would imagine that most people would learn to use this system very quickly.",
+            "I found the system difficult to use.",
+            "I felt very confident using the system.",
+            "I needed to learn a lot of things before I could get going with this system."
+        ] %}
+
+        {% for q in range(0, sus_questions|length) %}
+        <div class="survey-question">
+            <label>{{ sus_questions[q] }}</label>
+            <div class="survey-options">
+                {% for i in range(1,6) %}
+                <label>
+                    <input type="radio" name="sus_q{{ q+1 }}" value="{{ i }}" required> {{ i }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <h2>Additional Feedback</h2>
+
+        <div class="survey-question">
+            <label>Do you have any comments about the system?</label>
+            <textarea name="open_feedback" rows="4" style="width:100%; padding:8px;"></textarea>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn-secondary">Submit Responses</button>
+        </div>
+
+    </form>
+
+</div>
+</body>
+</html>
+
+===== FILE: templates/done.html =====
+<!-- templates/done.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Study Completed</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="container">
+
+    <h1>Thank You</h1>
+
+    <p>
+        You have completed the study. Your responses have been recorded.
+    </p>
+
+    <div class="button-group" style="margin-top: 20px;">
+        <a href="/" class="btn-secondary">
+            Return to Main Page
+        </a>
+    </div>
+
+</div>
+</body>
+</html>
+
+
+===== FILE: templates/results.html =====
+<!-- templates/results.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Results</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+  <div style="display:flex; justify-content: space-between; align-items:center; gap: 16px; flex-wrap: wrap;">
+    <h1>Study Results</h1>
+    <div>
+      <a href="/admin/dashboard" class="small-text" style="margin-right:12px;">Admin Dashboard</a>
+      <a href="/admin/logout" class="small-text">Logout</a>
+    </div>
+  </div>
+
+  <p class="small-text">
+    <strong>Admin only:</strong> results are only visible after logging in.
+  </p>
+
+  <hr />
+
+  {% if not results.has_data %}
+    <p>{{ results.message }}</p>
+  {% else %}
+
+    <div class="button-group" style="margin-bottom: 20px;">
+      <a href="/admin/download_participant_summary" class="btn-secondary">Download Participant Summary CSV</a>
+    </div>
+
+    <div class="case-box" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Participants logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_participants }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Completed participants</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_completed_participants }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Decisions logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_decisions }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Surveys logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_surveys }}</div>
+      </div>
+      <div class="survey-question" style="margin-bottom:0;">
+        <div class="small-text">Events logged</div>
+        <div style="font-size: 28px; font-weight: 800;">{{ results.summary.n_events }}</div>
+      </div>
+    </div>
+
+    <h2>Overview</h2>
+    <div class="case-box" style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Baseline</th>
+            <th>AI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Accuracy</td>
+            <td>{{ "%.3f"|format(results.summary.accuracy_by_condition.baseline) if results.summary.accuracy_by_condition and 'baseline' in results.summary.accuracy_by_condition else "N/A" }}</td>
+            <td>{{ "%.3f"|format(results.summary.accuracy_by_condition.ai) if results.summary.accuracy_by_condition and 'ai' in results.summary.accuracy_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>Decision time (seconds)</td>
+            <td>{{ "%.3f"|format(results.summary.time_seconds_by_condition.baseline) if results.summary.time_seconds_by_condition and 'baseline' in results.summary.time_seconds_by_condition else "N/A" }}</td>
+            <td>{{ "%.3f"|format(results.summary.time_seconds_by_condition.ai) if results.summary.time_seconds_by_condition and 'ai' in results.summary.time_seconds_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>Trust score (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.trust_by_condition.ai) if results.summary.trust_by_condition and 'ai' in results.summary.trust_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>SUS score (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.sus_by_condition.ai) if results.summary.sus_by_condition and 'ai' in results.summary.sus_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI followed rate</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_followed_rate.ai) if results.summary.ai_followed_rate and 'ai' in results.summary.ai_followed_rate else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI confidence (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_confidence_by_condition.ai) if results.summary.ai_confidence_by_condition and 'ai' in results.summary.ai_confidence_by_condition else "N/A" }}</td>
+          </tr>
+          <tr>
+            <td>AI approval probability (mean)</td>
+            <td>N/A</td>
+            <td>{{ "%.3f"|format(results.summary.ai_prob_approve_by_condition.ai) if results.summary.ai_prob_approve_by_condition and 'ai' in results.summary.ai_prob_approve_by_condition else "N/A" }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Paired Comparisons</h2>
+    <div class="case-box" style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Comparison</th>
+            <th>n</th>
+            <th>Baseline mean</th>
+            <th>AI mean</th>
+            <th>Mean diff</th>
+            <th>t</th>
+            <th>p</th>
+            <th>Cohen's d<sub>z</sub></th>
+            <th>95% CI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set paired = results.summary.paired_tests %}
+          {% for key, label in [("accuracy", "Accuracy"), ("decision_time_seconds", "Decision time (s)")] %}
+            {% if paired and paired[key] %}
+              {% set r = paired[key] %}
+              <tr>
+                <td>{{ label }}</td>
+                <td>{{ r.n if r.n is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.baseline_mean) if r.baseline_mean is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.ai_mean) if r.ai_mean is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.mean_difference) if r.mean_difference is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.t_statistic) if r.t_statistic is not none else "N/A" }}</td>
+                <td>{{ "%.4f"|format(r.p_value) if r.p_value is not none else "N/A" }}</td>
+                <td>{{ "%.3f"|format(r.cohens_dz) if r.cohens_dz is not none else "N/A" }}</td>
+                <td>
+                  {% if r.ci95_low is not none and r.ci95_high is not none %}
+                    [{{ "%.3f"|format(r.ci95_low) }}, {{ "%.3f"|format(r.ci95_high) }}]
+                  {% else %}N/A{% endif %}
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Accuracy Improvement Groups</h2>
+    {% set ag = results.summary.accuracy_improvement_groups %}
+    {% if ag %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>n</th>
+              <th>Mean baseline accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Improved (AI &gt; baseline)</td>
+              <td>{{ ag.n_improved if ag.n_improved is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(ag.improved_baseline_accuracy_mean) if ag.improved_baseline_accuracy_mean is not none else "N/A" }}</td>
+            </tr>
+            <tr>
+              <td>Worsened (AI &lt; baseline)</td>
+              <td>{{ ag.n_worsened if ag.n_worsened is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(ag.worsened_baseline_accuracy_mean) if ag.worsened_baseline_accuracy_mean is not none else "N/A" }}</td>
+            </tr>
+            <tr>
+              <td>Unchanged</td>
+              <td>{{ ag.n_unchanged if ag.n_unchanged is not none else "N/A" }}</td>
+              <td>N/A</td>
+            </tr>
+          </tbody>
+        </table>
+        {% if ag.group_ttest_t is not none %}
+          <p class="small-text" style="margin-top:10px;">
+            Independent t-test (improved vs worsened baseline accuracy):
+            t = {{ "%.3f"|format(ag.group_ttest_t) }},
+            p = {{ "%.4f"|format(ag.group_ttest_p) }}
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>AI-Followed Rate Distribution</h2>
+    {% set afd = results.summary.ai_followed_distribution %}
+    {% if afd %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr><th>Mean</th><th>SD</th><th>Min</th><th>Median</th><th>Max</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ "%.3f"|format(afd.mean) if afd.mean is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.sd) if afd.sd is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.min) if afd.min is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.median) if afd.median is not none else "N/A" }}</td>
+              <td>{{ "%.3f"|format(afd.max) if afd.max is not none else "N/A" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>Spearman: Trust vs AI-Followed Rate</h2>
+    {% set sp = results.summary.spearman_trust_vs_ai_followed %}
+    {% if sp %}
+      <div class="case-box">
+        <p>
+          r<sub>s</sub> = {{ "%.3f"|format(sp.rs) if sp.rs is not none else "N/A" }},
+          p = {{ "%.4f"|format(sp.p_value) if sp.p_value is not none else "N/A" }},
+          n = {{ sp.n if sp.n is not none else "N/A" }}
+        </p>
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet.</p>
+    {% endif %}
+
+    <h2>Counterbalancing: Subgroup Stats (AB vs BA)</h2>
+    {% set cb = results.summary.counterbalance_subgroup_stats %}
+    {% if cb and ('AB' in cb or 'BA' in cb) %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>n</th>
+              <th>Baseline accuracy</th>
+              <th>AI accuracy</th>
+              <th>Baseline time (s)</th>
+              <th>AI time (s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in ["AB", "BA"] %}
+              {% if order in cb %}
+                {% set g = cb[order] %}
+                <tr>
+                  <td>{{ order }}</td>
+                  <td>{{ g.n }}</td>
+                  <td>{{ "%.3f"|format(g.baseline_accuracy_mean) if g.baseline_accuracy_mean is defined and g.baseline_accuracy_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.ai_accuracy_mean) if g.ai_accuracy_mean is defined and g.ai_accuracy_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.baseline_avg_time_seconds_mean) if g.baseline_avg_time_seconds_mean is defined and g.baseline_avg_time_seconds_mean is not none else "N/A" }}</td>
+                  <td>{{ "%.3f"|format(g.ai_avg_time_seconds_mean) if g.ai_avg_time_seconds_mean is defined and g.ai_avg_time_seconds_mean is not none else "N/A" }}</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if cb.order_effect_ai_accuracy_t is defined and cb.order_effect_ai_accuracy_t is not none %}
+          <p class="small-text" style="margin-top:10px;">
+            Order effect t-test (AI accuracy AB vs BA):
+            t = {{ "%.3f"|format(cb.order_effect_ai_accuracy_t) }},
+            p = {{ "%.4f"|format(cb.order_effect_ai_accuracy_p) }}
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="small-text">Not enough data yet. Requires participants from both condition orders.</p>
+    {% endif %}
+
+    <h2>Participant Summary</h2>
+    {% if results.summary.participant_summary_preview and results.summary.participant_summary_preview|length > 0 %}
+      <div class="case-box" style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Order</th>
+              <th>Completed</th>
+              <th>Baseline acc.</th>
+              <th>AI acc.</th>
+              <th>Baseline time</th>
+              <th>AI time</th>
+              <th>AI followed</th>
+              <th>AI confidence</th>
+              <th>Trust</th>
+              <th>SUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in results.summary.participant_summary_preview %}
+              <tr>
+                <td>{{ row.participant_id if row.participant_id not in [none, ""] else "N/A" }}</td>
+                <td>{{ row.condition_order if row.condition_order is defined and row.condition_order not in [none, ""] else "N/A" }}</td>
+                <td>{{ "Yes" if row.completed else "No" }}</td>
+                <td>{{ row.baseline_accuracy if row.baseline_accuracy == row.baseline_accuracy else "N/A" }}</td>
+                <td>{{ row.ai_accuracy if row.ai_accuracy == row.ai_accuracy else "N/A" }}</td>
+                <td>{{ row.baseline_avg_time_seconds if row.baseline_avg_time_seconds == row.baseline_avg_time_seconds else "N/A" }}</td>
+                <td>{{ row.ai_avg_time_seconds if row.ai_avg_time_seconds == row.ai_avg_time_seconds else "N/A" }}</td>
+                <td>{{ row.ai_ai_followed_rate if row.ai_ai_followed_rate == row.ai_ai_followed_rate else "N/A" }}</td>
+                <td>{{ row.ai_avg_ai_confidence if row.ai_avg_ai_confidence == row.ai_avg_ai_confidence else "N/A" }}</td>
+                <td>{{ row.trust_score if row.trust_score == row.trust_score else "N/A" }}</td>
+                <td>{{ row.sus_score if row.sus_score == row.sus_score else "N/A" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="small-text">No participant summary available yet.</p>
+    {% endif %}
+
+    <h2>Participant Comments</h2>
+    {% if results.summary.comments and results.summary.comments|length > 0 %}
+      <div class="case-box">
+        {% for item in results.summary.comments %}
+          {% if item.comment and item.comment|string|lower not in ["nan", "none", ""] %}
+            <div class="case-item">
+              <div>
+                <span class="case-label">Participant:</span> {{ item.participant_id }}
+                <span class="small-text">({{ item.condition }})</span>
+              </div>
+              <div class="case-value" style="margin-top:6px;">{{ item.comment }}</div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="small-text">No written comments submitted yet.</p>
+    {% endif %}
+
+    <h2>Plots</h2>
+    <div class="results-section">
+
+      {% for plot_key, plot_title, plot_desc in [
+        ("accuracy", "Accuracy", "Mean participant-level accuracy per condition."),
+        ("time", "Decision Time", "Mean participant-level decision time in seconds per condition."),
+        ("trust", "Trust Score", "Mean trust score (trust_q1–q3 averaged) across participants."),
+        ("sus", "SUS Score", "Mean SUS score (0–100) using the standard scoring formula."),
+        ("ai_followed", "AI Followed Rate", "Proportion of AI-condition cases where the participant matched the AI recommendation."),
+        ("ai_confidence", "AI Confidence", "Mean AI confidence score across AI-condition decisions."),
+        ("ai_prob_approve", "AI Approval Probability", "Mean model approval probability across AI-condition decisions."),
+        ("ai_seen_rate", "AI Seen Rate", "Proportion of cases where the AI panel was present on screen."),
+        ("trust_vs_ai_followed", "Trust vs AI-Followed Rate", "Scatter plot of trust score against AI-followed rate per participant."),
+        ("accuracy_groups", "Baseline Accuracy: Improved vs Worsened", "Histogram comparing baseline accuracy for participants who improved vs worsened with AI assistance."),
+        ("counterbalance_accuracy", "AI Accuracy by Condition Order", "Mean AI-condition accuracy for AB vs BA groups."),
+        ("condition_order_distribution", "Condition Order Distribution", "Number of participants assigned to each condition order."),
+        ("age_group_distribution", "Age Group Distribution", "Number of participants per age group."),
+        ("background_distribution", "Background Distribution", "Number of participants per background category."),
+        ("ai_familiarity_distribution", "AI Familiarity Distribution", "Number of participants per AI familiarity level."),
+        ("finance_familiarity_distribution", "Finance Familiarity Distribution", "Number of participants per finance familiarity level.")
+      ] %}
+        {% if results.plots[plot_key] is defined and results.plots[plot_key] %}
+          <div class="results-card">
+            <h3>{{ plot_title }}</h3>
+            <img src="{{ results.plots[plot_key] }}" alt="{{ plot_title }} plot">
+            <p class="metric-desc">{{ plot_desc }}</p>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+    </div>
+  {% endif %}
+</div>
+</body>
+</html>
+
+===== FILE: templates/guidelines.html =====
+<!-- templates/guidelines.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Guidelines</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="container">
+
+    <h1>Guidelines</h1>
+
+    <p>
+        Please read the guidelines below before starting. This ensures that all participants have the same understanding of the task.
+    </p>
+
+    <div class="case-box">
+        <h2>1) Your task</h2>
+        <p>
+            You will review loan applications and choose one decision for each case:
+            <strong>Approve</strong> or <strong>Reject</strong>.
+        </p>
+
+        <h2>2) What "Approve" and "Reject" mean</h2>
+        <p>
+            <strong>Approve</strong> means you believe the applicant should be granted the loan.
+            <strong>Reject</strong> means you believe the applicant should not be granted the loan.
+        </p>
+
+        <h2>3) Interpreting the applicant information</h2>
+        <p>
+            The application shows the same fields for each case. Some values may indicate higher or lower risk.
+            Use your own judgment based on the information shown.
+        </p>
+
+        <h2>4) AI support</h2>
+        <p>
+            One part of the study includes an <strong>AI Recommendation</strong> shown alongside each case.
+            The AI also displays the key factors behind its recommendation.
+            The AI provides advice only. <strong>You are responsible for the final decision.</strong>
+        </p>
+
+        <h2>5) AI confidence</h2>
+        <p>
+            The AI also shows a <strong>Confidence</strong> value (percentage). This represents how confident the AI is in its recommendation for that case.
+        </p>
+
+        <h2>6) Decision threshold</h2>
+        <p>
+            The AI converts its internal score into a suggested decision using a fixed threshold.
+            For this study, the threshold is <strong>{{ (approval_threshold * 100)|round(0) }}%</strong>.
+            This means that when the AI's estimated probability of approval is at least this threshold, it suggests <strong>Approve</strong>; otherwise it suggests <strong>Reject</strong>.
+        </p>
+
+        <h2>7) Take your time, but do not overthink</h2>
+        <p>
+            Work steadily and make the best decision you can for each case.
+        </p>
+    </div>
+
+    <form action="/guidelines" method="post">
+        <div class="survey-question">
+            <label>
+                <input type="checkbox" name="guidelines_ok" required>
+                I have read and understood the guidelines.
+            </label>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn-secondary">
+                Continue to the first case
+            </button>
+        </div>
+    </form>
+
+</div>
+</body>
+</html>
+
+===== FILE: templates/task.html =====
+<!--templates/task.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Decision Task</title>
+
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/app.js" defer></script>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="section-title">
+        <h1>Loan Application Review</h1>
+        <a class="small-text" href="/guidelines">View guidelines</a>
+    </div>
+
+    <div class="progress-text">
+        Case {{ case_number }} of {{ total_cases }}
+    </div>
+
+    <input type="hidden" id="case-id" value="{{ case_id }}">
+
+    <div class="case-box">
+
+        <h2>Applicant Information</h2>
+
+        {% for key, value in case.items() %}
+
+        <div class="case-item">
+
+            <div>
+
+                {% if key == "person_age" %}
+                    <span class="case-label">Applicant age:</span>
+
+                {% elif key == "person_education" %}
+                    <span class="case-label">Education level:</span>
+
+                {% elif key == "person_income" %}
+                    <span class="case-label">Annual income:</span>
+
+                {% elif key == "person_emp_exp" %}
+                    <span class="case-label">Employment experience:</span>
+
+                {% elif key == "person_home_ownership" %}
+                    <span class="case-label">Housing situation:</span>
+
+                {% elif key == "loan_intent" %}
+                    <span class="case-label">Loan purpose:</span>
+
+                {% elif key == "loan_amnt" %}
+                    <span class="case-label">Requested loan amount:</span>
+
+                {% elif key == "loan_int_rate" %}
+                    <span class="case-label">Interest rate:</span>
+
+                {% elif key == "credit_score" %}
+                    <span class="case-label">Credit score:</span>
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+                    <span class="case-label">Previous loan repayment problems:</span>
+
+                {% else %}
+                    <span class="case-label">{{ key.replace('_', ' ')|title }}:</span>
+                {% endif %}
+
+                {% if value|string|lower == "unknown" %}
+
+                    Not available
+
+                {% elif key == "person_income" or key == "loan_amnt" %}
+
+                    ${{ "{:,.0f}".format(value|float) }}
+
+                {% elif key == "loan_int_rate" %}
+
+                    {{ "%.1f"|format(value|float) }}%
+
+                {% elif key == "person_age" or key == "person_emp_exp" %}
+
+                    {{ value|int }} years
+
+                {% elif key == "loan_intent" %}
+
+                    {% if value == "HOMEIMPROVEMENT" %}
+                        Home improvement
+
+                    {% elif value == "DEBTCONSOLIDATION" %}
+                        Debt consolidation
+
+                    {% elif value == "MEDICAL" %}
+                        Medical expenses
+
+                    {% elif value == "VENTURE" %}
+                        Business investment
+
+                    {% elif value == "PERSONAL" %}
+                        Personal expenses
+
+                    {% elif value == "EDUCATION" %}
+                        Education
+
+                    {% else %}
+                        {{ value.replace("_", " ").title() }}
+                    {% endif %}
+
+                {% elif key == "person_home_ownership" %}
+
+                    {% if value == "RENT" %}
+                        Renting
+
+                    {% elif value == "MORTGAGE" %}
+                        Mortgage
+
+                    {% elif value == "OWN" %}
+                        Owns home
+
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+
+                    {% if value|string|lower == "yes" %}
+                        Yes
+                    {% else %}
+                        No
+                    {% endif %}
+
+                {% else %}
+
+                    {{ value }}
+
+                {% endif %}
+
+            </div>
+
+            <div class="small-text" style="margin-top: 0; line-height: 1.5;">
+
+                {% if key == "person_age" %}
+                    Age may affect income stability and repayment ability. Very young applicants may have shorter financial histories, while older applicants may have more established income patterns.
+
+                {% elif key == "person_education" %}
+                    Education level may relate to future job opportunities and income stability. Higher education can sometimes indicate stronger long-term earning potential.
+
+                {% elif key == "person_income" %}
+                    Income shows how much money the applicant earns each year. Higher income is usually positive because it can make monthly loan payments easier to handle.
+
+                {% elif key == "person_emp_exp" %}
+                    Employment experience shows how long the applicant has been working. More work experience may indicate more stable income and lower uncertainty.
+
+                {% elif key == "person_home_ownership" %}
+                    Housing situation may reflect financial stability. Owning a home or having a mortgage can indicate long-term financial commitment, while renting may indicate different monthly obligations.
+
+                {% elif key == "loan_intent" %}
+                    Loan purpose shows what the applicant wants to use the money for. Some purposes may be seen as more financially stable, while others may involve higher uncertainty.
+
+                {% elif key == "loan_amnt" %}
+                    Loan amount shows how much money the applicant wants to borrow. A larger loan can be harder to repay, especially if income is low.
+
+                {% elif key == "loan_int_rate" %}
+                    Interest rate shows the cost of borrowing. A higher interest rate makes the loan more expensive and can increase repayment pressure.
+
+                {% elif key == "credit_score" %}
+                    Credit score reflects previous borrowing and repayment behavior. A higher credit score is usually considered better, while a lower score can indicate higher repayment risk.
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+                    This shows whether the applicant has previously failed to repay a loan. "No" is usually positive, while "Yes" can indicate higher risk.
+
+                {% elif field_descriptions and key in field_descriptions %}
+                    {{ field_descriptions[key] }}
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+    {% if condition == "ai" and ai %}
+
+    <div class="ai-panel" id="ai-panel">
+
+        <div class="ai-title">
+            AI Recommendation
+        </div>
+
+        <div
+            class="ai-recommendation"
+            id="ai-recommendation"
+            data-recommendation="{{ ai.recommendation }}"
+        >
+            Suggested decision:
+            <strong>{{ ai.recommendation }}</strong>
+        </div>
+
+        <div class="ai-confidence">
+            Confidence: {{ (ai.confidence * 100)|round(1) }}%
+        </div>
+
+        <div class="small-text" style="margin-bottom: 10px;">
+            The color of each factor shows how strongly it influenced the AI recommendation:
+            green = strong influence, yellow = moderate influence, and red = weaker influence.
+        </div>
+
+        {% if ai.explanation %}
+
+        <div class="ai-explanation-inline" id="ai-explanation">
+
+            <div class="ai-explanation-label">
+                Main factors influencing this recommendation:
+            </div>
+
+            <ul>
+
+                {% for reason in ai.explanation %}
+
+                <li class="
+                    {% if reason.weight == 'high' %}
+                        explanation-high
+                    {% elif reason.weight == 'medium' %}
+                        explanation-medium
+                    {% else %}
+                        explanation-low
+                    {% endif %}
+                ">
+
+                    <strong>{{ reason.factor }}</strong><br>
+                    <span>{{ reason.text }}</span>
+
+                </li>
+
+                {% endfor %}
+
+            </ul>
+
+        </div>
+
+        {% endif %}
+
+        <div class="small-text" style="margin-top: 10px;">
+            The AI provides decision support only. You are responsible for the final decision.
+        </div>
+
+    </div>
+
+    {% endif %}
+
+    <div class="button-group">
+
+        <button id="approve-btn" class="btn-approve">
+            Approve
+        </button>
+
+        <button id="reject-btn" class="btn-reject">
+            Reject
+        </button>
+
+    </div>
+
+</div>
+
+</body>
+</html>
+
+===== FILE: templates/admin_login.html =====
+<!-- templates/admin_login.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="container">
+  <h1>Admin Login</h1>
+
+  {% if error %}
+    <p style="color: #c0392b;"><strong>{{ error }}</strong></p>
+  {% endif %}
+
+  <form action="/admin" method="post">
+    <div class="survey-question">
+      <label>Password</label>
+      <input type="password" name="password" style="padding:8px; width: 280px;" required />
+    </div>
+
+    <div class="button-group">
+      <button type="submit" class="btn-secondary">Login</button>
+    </div>
+  </form>
+</div>
+</body>
+</html>
+
+===== FILE: templates/admin_dashboard.html =====
+<!-- templates/admin_dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+
+    <div style="display:flex; justify-content: space-between; align-items:center;">
+      <h1>Admin Dashboard</h1>
+      <a href="/admin/logout" class="small-text">Logout</a>
+    </div>
+
+    <p class="small-text">
+      <strong>Admin only:</strong> this page is for managing study data and viewing results.
+    </p>
+
+    <hr />
+
+    <h2>Quick Links</h2>
+    <div class="button-group">
+      <a href="/admin/results" class="btn-secondary">View Results</a>
+      <a href="/admin/download_db" class="btn-secondary">Download Database</a>
+      <a href="/admin/download_participant_summary" class="btn-secondary">Download Participant Summary</a>
+    </div>
+
+    <hr />
+
+    <h2>Database Status</h2>
+    <p class="small-text">
+      Row counts are retrieved from the SQLite database (<code>outputs/study.db</code>).
+    </p>
+
+    <div class="case-box">
+      <div class="case-item">
+        <span class="case-label">Participants rows:</span>
+        <span class="case-value">{{ counts.participants }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Decisions rows:</span>
+        <span class="case-value">{{ counts.decisions }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Events rows:</span>
+        <span class="case-value">{{ counts.events }}</span>
+      </div>
+      <div class="case-item">
+        <span class="case-label">Surveys rows:</span>
+        <span class="case-value">{{ counts.surveys }}</span>
+      </div>
+    </div>
+
+    <div class="case-box" style="margin-top:12px;">
+      <div class="case-item">
+        <div class="case-label">What each log contains</div>
+        <div class="small-text" style="margin-top:6px;">
+          <strong>Participants:</strong> one row per participant with metadata, condition order, and completion status.<br/>
+          <strong>Decisions:</strong> one row per case decision (choice, correct/incorrect, time, AI seen/followed, AI recommendation/confidence/probability).<br/>
+          <strong>Events:</strong> interaction events (clicks, openings, page actions) with optional JSON payload.<br/>
+          <strong>Surveys:</strong> post-task questionnaire answers stored as JSON (one row per participant).
+        </div>
+      </div>
+    </div>
+
+    <hr />
+
+    <h2>Upload Database</h2>
+    <p class="small-text">
+      Uploads a database file and replaces the current <code>study.db</code>.
+    </p>
+
+    <div class="case-box">
+      <form action="/admin/upload_db" method="post" enctype="multipart/form-data">
+        <div class="survey-question">
+          <label for="db_file">Database file</label>
+          <input type="file" id="db_file" name="db_file" accept=".db" required />
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="btn-secondary">Upload Database</button>
+        </div>
+      </form>
+    </div>
+
+    <hr />
+
+    <h2>Delete Participant Data</h2>
+    <p class="small-text">
+      Deletes one participant's rows from <code>participants</code>, <code>decisions</code>, <code>events</code>, and <code>surveys</code>.
+    </p>
+
+    <div class="case-box" style="overflow-x: auto;">
+      {% if participants and participants|length > 0 %}
+        <table style="min-width: 750px;">
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Order</th>
+              <th>Completed</th>
+              <th>Age group</th>
+              <th>Background</th>
+              <th>AI familiarity</th>
+              <th>Finance familiarity</th>
+              <th>Decisions</th>
+              <th>Events</th>
+              <th>Surveys</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for participant in participants %}
+              <tr>
+                <td>{{ participant.participant_id }}</td>
+                <td>{{ participant.condition_order if participant.condition_order is defined and participant.condition_order not in [none, ""] else "N/A" }}</td>
+                <td>{{ "Yes" if participant.completed else "No" }}</td>
+                <td>{{ participant.age_group }}</td>
+                <td>{{ participant.background }}</td>
+                <td>{{ participant.ai_familiarity }}</td>
+                <td>{{ participant.finance_familiarity }}</td>
+                <td>{{ participant.decisions }}</td>
+                <td>{{ participant.events }}</td>
+                <td>{{ participant.surveys }}</td>
+                <td>
+                  <form action="/admin/delete_participant" method="post" style="margin:0;">
+                    <input type="hidden" name="participant_id" value="{{ participant.participant_id }}">
+                    <button type="submit" class="icon-btn" title="Delete this participant">✕</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="small-text">No participants found yet.</div>
+      {% endif %}
+    </div>
+
+    <hr />
+
+    <h2>Clear Database Tables</h2>
+    <p class="small-text">
+      Deletes all rows from all study tables (the database file stays).
+    </p>
+
+    <div class="case-box">
+      <form action="/admin/clear_all" method="post">
+        <button type="submit" class="btn-reject">Clear ALL study data</button>
+      </form>
+    </div>
+
+  </div>
+</body>
+</html>
+
