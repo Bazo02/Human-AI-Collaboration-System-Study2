@@ -37,8 +37,9 @@ The system measures:
 | AI model | Logistic regression | XGBoost |
 | Explanations method | Linear coefficients (x_i × coef_i) | SHAP TreeExplainer (per-case) |
 | Dataset | Loan approval (Kaggle) | Loan Approval Classification |
-| Mean AI confidence | 0.875 | ~0.58 |
-| Borderline cases | 3 / 120 | 55 / 120 |
+| AI confidence | High and stable (~0.875) | Lower and more varied confidence scores |
+| Borderline cases | Limited | Expanded borderline selection |
+| Model test accuracy | ~0.78 | 0.928 |
 
 ---
 
