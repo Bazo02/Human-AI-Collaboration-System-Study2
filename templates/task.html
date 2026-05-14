@@ -1,14 +1,18 @@
-<!-- templates/task.html -->
+<!--templates/task.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Loan Decision Task</title>
+
     <link rel="stylesheet" href="/static/styles.css">
     <script src="/static/app.js" defer></script>
 </head>
+
 <body>
+
 <div class="container">
 
     <div class="section-title">
@@ -23,77 +27,247 @@
     <input type="hidden" id="case-id" value="{{ case_id }}">
 
     <div class="case-box">
+
         <h2>Applicant Information</h2>
 
         {% for key, value in case.items() %}
-            <div class="case-item">
-                <div>
+
+        <div class="case-item">
+
+            <div>
+
+                {% if key == "person_age" %}
+                    <span class="case-label">Applicant age:</span>
+
+                {% elif key == "person_education" %}
+                    <span class="case-label">Education level:</span>
+
+                {% elif key == "person_income" %}
+                    <span class="case-label">Annual income:</span>
+
+                {% elif key == "person_emp_exp" %}
+                    <span class="case-label">Employment experience:</span>
+
+                {% elif key == "person_home_ownership" %}
+                    <span class="case-label">Housing situation:</span>
+
+                {% elif key == "loan_intent" %}
+                    <span class="case-label">Loan purpose:</span>
+
+                {% elif key == "loan_amnt" %}
+                    <span class="case-label">Requested loan amount:</span>
+
+                {% elif key == "loan_int_rate" %}
+                    <span class="case-label">Interest rate:</span>
+
+                {% elif key == "credit_score" %}
+                    <span class="case-label">Credit score:</span>
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+                    <span class="case-label">Previous loan repayment problems:</span>
+
+                {% else %}
                     <span class="case-label">{{ key.replace('_', ' ')|title }}:</span>
-                    {% if key == "Credit amount" %}
-                        €{{ "{:,.0f}".format(value) }}
-                    {% elif key == "Duration" %}
-                        {{ value }} months
-                    {% elif key == "Age" %}
-                        {{ value }} years
-                    {% elif key == "Job" %}
-                        {% if value|int == 0 %}Unskilled (non-resident)
-                        {% elif value|int == 1 %}Unskilled (resident)
-                        {% elif value|int == 2 %}Skilled
-                        {% elif value|int == 3 %}Highly skilled
-                        {% else %}{{ value }}{% endif %}
-                    {% elif value == "Unknown" %}
-                        Not available
+                {% endif %}
+
+                {% if value|string|lower == "unknown" %}
+
+                    Not available
+
+                {% elif key == "person_income" or key == "loan_amnt" %}
+
+                    ${{ "{:,.0f}".format(value|float) }}
+
+                {% elif key == "loan_int_rate" %}
+
+                    {{ "%.1f"|format(value|float) }}%
+
+                {% elif key == "person_age" or key == "person_emp_exp" %}
+
+                    {{ value|int }} years
+
+                {% elif key == "loan_intent" %}
+
+                    {% if value == "HOMEIMPROVEMENT" %}
+                        Home improvement
+
+                    {% elif value == "DEBTCONSOLIDATION" %}
+                        Debt consolidation
+
+                    {% elif value == "MEDICAL" %}
+                        Medical expenses
+
+                    {% elif value == "VENTURE" %}
+                        Business investment
+
+                    {% elif value == "PERSONAL" %}
+                        Personal expenses
+
+                    {% elif value == "EDUCATION" %}
+                        Education
+
+                    {% else %}
+                        {{ value.replace("_", " ").title() }}
+                    {% endif %}
+
+                {% elif key == "person_home_ownership" %}
+
+                    {% if value == "RENT" %}
+                        Renting
+
+                    {% elif value == "MORTGAGE" %}
+                        Mortgage
+
+                    {% elif value == "OWN" %}
+                        Owns home
+
                     {% else %}
                         {{ value }}
                     {% endif %}
-                </div>
-                <div class="small-text" style="margin-top: 0;">
-                    {% if field_descriptions and key in field_descriptions %}
-                        {{ field_descriptions[key] }}
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+
+                    {% if value|string|lower == "yes" %}
+                        Yes
+                    {% else %}
+                        No
                     {% endif %}
-                </div>
+
+                {% else %}
+
+                    {{ value }}
+
+                {% endif %}
+
             </div>
+
+            <div class="small-text" style="margin-top: 0; line-height: 1.5;">
+
+                {% if key == "person_age" %}
+                    Age may affect income stability and repayment ability. Very young applicants may have shorter financial histories, while older applicants may have more established income patterns.
+
+                {% elif key == "person_education" %}
+                    Education level may relate to future job opportunities and income stability. Higher education can sometimes indicate stronger long-term earning potential.
+
+                {% elif key == "person_income" %}
+                    Income shows how much money the applicant earns each year. Higher income is usually positive because it can make monthly loan payments easier to handle.
+
+                {% elif key == "person_emp_exp" %}
+                    Employment experience shows how long the applicant has been working. More work experience may indicate more stable income and lower uncertainty.
+
+                {% elif key == "person_home_ownership" %}
+                    Housing situation may reflect financial stability. Owning a home or having a mortgage can indicate long-term financial commitment, while renting may indicate different monthly obligations.
+
+                {% elif key == "loan_intent" %}
+                    Loan purpose shows what the applicant wants to use the money for. Some purposes may be seen as more financially stable, while others may involve higher uncertainty.
+
+                {% elif key == "loan_amnt" %}
+                    Loan amount shows how much money the applicant wants to borrow. A larger loan can be harder to repay, especially if income is low.
+
+                {% elif key == "loan_int_rate" %}
+                    Interest rate shows the cost of borrowing. A higher interest rate makes the loan more expensive and can increase repayment pressure.
+
+                {% elif key == "credit_score" %}
+                    Credit score reflects previous borrowing and repayment behavior. A higher credit score is usually considered better, while a lower score can indicate higher repayment risk.
+
+                {% elif key == "previous_loan_defaults_on_file" %}
+                    This shows whether the applicant has previously failed to repay a loan. "No" is usually positive, while "Yes" can indicate higher risk.
+
+                {% elif field_descriptions and key in field_descriptions %}
+                    {{ field_descriptions[key] }}
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
         {% endfor %}
+
     </div>
 
     {% if condition == "ai" and ai %}
+
     <div class="ai-panel" id="ai-panel">
-        <div class="ai-title">AI Recommendation</div>
+
+        <div class="ai-title">
+            AI Recommendation
+        </div>
 
         <div
             class="ai-recommendation"
             id="ai-recommendation"
             data-recommendation="{{ ai.recommendation }}"
         >
-            Suggested decision: <strong>{{ ai.recommendation }}</strong>
+            Suggested decision:
+            <strong>{{ ai.recommendation }}</strong>
         </div>
 
         <div class="ai-confidence">
             Confidence: {{ (ai.confidence * 100)|round(1) }}%
         </div>
 
-        {% if ai.explanation %}
-        <div class="ai-explanation-inline" id="ai-explanation">
-            <div class="ai-explanation-label">Key factors behind this recommendation:</div>
-            <ul>
-                {% for reason in ai.explanation %}
-                    <li>{{ reason }}</li>
-                {% endfor %}
-            </ul>
+        <div class="small-text" style="margin-bottom: 10px;">
+            The color of each factor shows how strongly it influenced the AI recommendation:
+            green = strong influence, yellow = moderate influence, and red = weaker influence.
         </div>
+
+        {% if ai.explanation %}
+
+        <div class="ai-explanation-inline" id="ai-explanation">
+
+            <div class="ai-explanation-label">
+                Main factors influencing this recommendation:
+            </div>
+
+            <ul>
+
+                {% for reason in ai.explanation %}
+
+                <li class="
+                    {% if reason.weight == 'high' %}
+                        explanation-high
+                    {% elif reason.weight == 'medium' %}
+                        explanation-medium
+                    {% else %}
+                        explanation-low
+                    {% endif %}
+                ">
+
+                    <strong>{{ reason.factor }}</strong><br>
+                    <span>{{ reason.text }}</span>
+
+                </li>
+
+                {% endfor %}
+
+            </ul>
+
+        </div>
+
         {% endif %}
 
         <div class="small-text" style="margin-top: 10px;">
-            Note: The AI provides advice, but you make the final decision.
+            The AI provides decision support only. You are responsible for the final decision.
         </div>
+
     </div>
+
     {% endif %}
 
     <div class="button-group">
-        <button id="approve-btn" class="btn-approve">Approve</button>
-        <button id="reject-btn" class="btn-reject">Reject</button>
+
+        <button id="approve-btn" class="btn-approve">
+            Approve
+        </button>
+
+        <button id="reject-btn" class="btn-reject">
+            Reject
+        </button>
+
     </div>
 
 </div>
+
 </body>
 </html>

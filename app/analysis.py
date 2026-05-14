@@ -329,8 +329,6 @@ def _participant_level_summary(
             agg_map["ai_followed_rate"] = ("ai_followed", "mean")
         if "ai_seen" in decisions.columns:
             agg_map["ai_seen_rate"] = ("ai_seen", "mean")
-        if "explanation_opened" in decisions.columns:
-            agg_map["explanation_open_rate"] = ("explanation_opened", "mean")
         if "ai_confidence" in decisions.columns:
             agg_map["avg_ai_confidence"] = ("ai_confidence", "mean")
         if "ai_prob_approve" in decisions.columns:
@@ -434,7 +432,7 @@ def generate_results(static_root: str) -> Dict[str, Any]:
     if not decisions.empty:
         for col in [
             "correct", "time_ms", "ai_followed", "ai_seen",
-            "explanation_opened", "ground_truth", "ai_confidence", "ai_prob_approve",
+            "ground_truth", "ai_confidence", "ai_prob_approve",
         ]:
             if col in decisions.columns:
                 decisions[col] = pd.to_numeric(decisions[col], errors="coerce")
@@ -454,7 +452,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
     sus_by_cond: Dict[str, float] = {}
     ai_confidence_by_cond: Dict[str, float] = {}
     ai_prob_approve_by_cond: Dict[str, float] = {}
-    explanation_open_by_cond: Dict[str, float] = {}
     ai_seen_by_cond: Dict[str, float] = {}
 
     if not participant_summary.empty:
@@ -482,11 +479,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
 
         if "ai_avg_ai_prob_approve" in participant_summary.columns and participant_summary["ai_avg_ai_prob_approve"].notna().any():
             ai_prob_approve_by_cond["ai"] = float(participant_summary["ai_avg_ai_prob_approve"].mean())
-
-        if "ai_explanation_open_rate" in participant_summary.columns and participant_summary["ai_explanation_open_rate"].notna().any():
-            explanation_open_by_cond["ai"] = float(participant_summary["ai_explanation_open_rate"].mean())
-        if "baseline_explanation_open_rate" in participant_summary.columns and participant_summary["baseline_explanation_open_rate"].notna().any():
-            explanation_open_by_cond["baseline"] = float(participant_summary["baseline_explanation_open_rate"].mean())
 
         if "ai_ai_seen_rate" in participant_summary.columns and participant_summary["ai_ai_seen_rate"].notna().any():
             ai_seen_by_cond["ai"] = float(participant_summary["ai_ai_seen_rate"].mean())
@@ -560,12 +552,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
         out = os.path.join(results_dir, "ai_prob_approve.png")
         _make_bar_plot(labels, vals, "Average AI approval probability", "Probability (0–1)", out)
         plots["ai_prob_approve"] = f"/static/{RESULTS_DIRNAME}/ai_prob_approve.png"
-
-    if explanation_open_by_cond:
-        labels, vals = ordered_values(explanation_open_by_cond)
-        out = os.path.join(results_dir, "explanation_open_rate.png")
-        _make_bar_plot(labels, vals, "Explanation open rate by condition", "Rate (0–1)", out)
-        plots["explanation_open_rate"] = f"/static/{RESULTS_DIRNAME}/explanation_open_rate.png"
 
     if ai_seen_by_cond:
         labels, vals = ordered_values(ai_seen_by_cond)
@@ -689,7 +675,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
         "ai_followed_rate": follow_by_cond,
         "ai_confidence_by_condition": ai_confidence_by_cond,
         "ai_prob_approve_by_condition": ai_prob_approve_by_cond,
-        "explanation_open_rate_by_condition": explanation_open_by_cond,
         "ai_seen_rate_by_condition": ai_seen_by_cond,
         "paired_tests": paired_tests,
         # Extended statistics for Study 2

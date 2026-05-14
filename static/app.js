@@ -2,7 +2,6 @@
 
 let startTime = null;
 let aiSeen = false;
-let explanationOpened = false;
 let aiFollowed = null;
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -10,10 +9,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const aiPanel = document.getElementById("ai-panel");
   if (aiPanel) aiSeen = true;
-
-  // Study 2: explanation is always visible, so mark it opened automatically
-  const explanationInline = document.getElementById("ai-explanation");
-  if (explanationInline) explanationOpened = true;
 
   document.getElementById("approve-btn")?.addEventListener("click", () => submitDecision("Approve"));
   document.getElementById("reject-btn")?.addEventListener("click", () => submitDecision("Reject"));
@@ -43,8 +38,7 @@ function submitDecision(decision) {
       decision,
       time_ms: timeMs,
       ai_followed: aiFollowed,
-      ai_seen: aiSeen,
-      explanation_opened: explanationOpened
+      ai_seen: aiSeen
     })
   })
     .then(r => r.json())

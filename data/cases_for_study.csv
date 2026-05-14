@@ -1,121 +1,121 @@
-case_id,Age,Job,Housing,Saving accounts,Checking account,Credit amount,Duration,Purpose,loan_approved
-673,42,3,own,little,Unknown,10366,60,car,1
-275,34,1,own,little,little,11998,30,repairs,0
-379,57,3,free,little,moderate,14318,36,car,0
-954,26,3,own,little,Unknown,10974,36,furniture/equipment,0
-757,74,0,own,little,rich,1299,6,car,1
-37,31,2,free,little,Unknown,6110,48,education,1
-2,22,2,own,little,moderate,5951,48,radio/TV,0
-486,47,3,own,little,moderate,1209,6,car,0
-396,32,2,rent,moderate,moderate,11760,39,education,1
-555,67,3,own,little,moderate,1199,9,education,1
-977,64,2,own,little,moderate,753,6,radio/TV,1
-256,27,1,own,Unknown,moderate,7418,60,radio/TV,1
-922,37,3,own,quite rich,Unknown,12749,48,radio/TV,1
-638,21,2,own,little,Unknown,15653,60,radio/TV,1
-616,48,3,own,Unknown,moderate,12204,48,business,1
-650,40,1,rent,little,little,684,12,education,0
-589,47,1,own,little,little,1217,18,domestic appliances,0
-988,64,2,own,moderate,Unknown,1409,13,radio/TV,1
-375,60,3,free,moderate,moderate,14782,60,vacation/others,0
-399,46,2,rent,little,moderate,1223,12,car,0
-903,42,2,free,Unknown,Unknown,10477,36,car,1
-350,32,2,free,rich,moderate,1136,9,education,0
-450,61,2,own,rich,moderate,1512,15,repairs,0
-91,56,2,own,little,Unknown,618,12,radio/TV,1
-545,61,1,own,little,Unknown,1255,12,car,1
-830,38,2,free,Unknown,moderate,6681,48,business,1
-124,63,2,free,little,rich,781,10,car,1
-451,30,3,own,Unknown,Unknown,11054,36,car,1
-564,37,2,free,Unknown,moderate,12389,36,car,0
-886,53,2,own,little,little,795,12,education,0
-58,31,2,own,little,Unknown,9566,36,radio/TV,1
-819,43,3,own,little,little,15857,36,vacation/others,1
-553,34,2,own,little,little,6999,48,radio/TV,0
-64,25,2,own,little,moderate,14421,48,business,0
-227,27,2,own,rich,moderate,10961,48,radio/TV,0
-336,44,3,rent,little,little,3384,6,furniture/equipment,0
-76,66,3,free,little,little,1526,12,car,1
-712,35,2,free,little,little,1198,6,education,0
-242,51,2,own,little,Unknown,1595,6,radio/TV,1
-468,32,2,own,Unknown,Unknown,7238,48,radio/TV,1
-138,66,1,own,quite rich,moderate,766,12,radio/TV,0
-808,65,2,own,Unknown,Unknown,930,12,radio/TV,1
-833,29,2,rent,little,little,11816,45,business,0
-625,65,2,free,little,little,2600,18,radio/TV,0
-376,37,2,rent,little,little,7685,48,business,0
-380,52,1,own,moderate,Unknown,362,6,car,1
-775,66,0,free,quite rich,rich,1480,12,car,1
-806,24,2,own,little,little,9271,36,car,0
-88,47,2,free,moderate,moderate,12612,36,education,0
-836,48,2,own,little,little,1082,12,car,0
-131,24,2,own,Unknown,moderate,8487,48,car,1
-96,58,2,rent,little,moderate,15945,54,business,0
-288,31,3,free,moderate,moderate,7582,48,vacation/others,1
-188,68,0,free,little,moderate,1175,16,car,1
-570,31,2,own,little,little,6758,48,radio/TV,0
-817,62,2,own,quite rich,Unknown,1338,6,domestic appliances,1
-220,64,2,own,little,Unknown,1364,10,car,1
-135,21,2,own,moderate,Unknown,10144,60,radio/TV,1
-602,30,2,own,little,moderate,918,9,furniture/equipment,0
-770,63,1,own,little,Unknown,1655,12,radio/TV,1
-79,39,1,own,Unknown,Unknown,9436,54,car,1
-916,32,3,own,little,moderate,18424,48,vacation/others,0
-748,37,1,own,little,little,1274,12,car,0
-658,37,2,own,Unknown,Unknown,10222,48,radio/TV,1
-374,63,3,free,Unknown,Unknown,13756,60,car,1
-896,31,3,own,Unknown,Unknown,8947,36,car,1
-296,26,2,own,little,moderate,9960,48,furniture/equipment,0
-537,75,3,own,Unknown,little,1374,6,car,1
-760,35,2,own,little,little,691,12,car,0
-686,34,2,free,Unknown,Unknown,6527,60,car,1
-550,35,2,free,Unknown,Unknown,8858,48,car,1
-685,31,1,own,moderate,moderate,9857,36,business,1
-286,35,1,own,little,little,10722,47,car,1
-201,52,2,own,quite rich,Unknown,936,9,education,1
-722,24,2,rent,rich,moderate,433,6,education,0
-444,41,1,own,little,Unknown,719,12,education,0
-187,74,3,free,little,moderate,5129,9,car,0
-926,46,2,own,little,little,697,12,car,0
-745,30,3,own,Unknown,little,14179,39,furniture/equipment,1
-301,54,0,own,little,Unknown,672,6,car,1
-596,32,1,own,moderate,moderate,931,6,car,0
-724,66,1,own,quite rich,moderate,790,9,radio/TV,1
-287,26,2,own,little,little,4788,48,car,1
-665,50,1,own,little,rich,1047,6,education,1
-273,36,3,free,Unknown,moderate,12169,48,car,1
-591,58,1,own,little,little,385,12,radio/TV,1
-850,57,1,own,little,little,709,12,radio/TV,0
-939,42,2,free,little,moderate,6288,60,education,0
-715,27,3,own,little,moderate,14027,60,car,0
-292,28,3,rent,little,moderate,9398,36,car,0
-178,52,2,own,quite rich,little,338,6,radio/TV,1
-472,23,2,own,little,little,448,6,education,0
-617,27,3,free,Unknown,moderate,9157,60,radio/TV,1
-755,55,2,free,rich,Unknown,1555,12,repairs,0
-696,50,2,rent,quite rich,Unknown,1236,6,car,1
-849,59,2,own,little,little,1364,9,radio/TV,1
-612,48,1,free,moderate,rich,1240,10,car,0
-14,60,1,own,little,little,1199,24,car,0
-928,39,2,free,little,little,10297,48,car,0
-431,74,1,own,little,Unknown,3448,5,business,1
-657,41,1,own,little,moderate,888,12,car,0
-181,28,2,own,little,Unknown,9572,36,business,0
-969,29,2,rent,Unknown,Unknown,7166,42,radio/TV,1
-707,24,2,own,moderate,moderate,6560,48,car,0
-681,56,2,own,little,Unknown,1538,6,education,1
-1,67,2,own,Unknown,little,1169,6,radio/TV,1
-430,55,0,free,little,little,1190,18,repairs,0
-751,49,2,own,little,little,428,6,furniture/equipment,1
-678,24,2,own,moderate,moderate,5595,72,radio/TV,0
-334,24,1,rent,moderate,Unknown,11590,48,car,0
-196,34,3,own,little,moderate,1501,9,education,0
-260,57,1,own,moderate,Unknown,1154,11,radio/TV,1
-305,44,2,free,quite rich,Unknown,10127,48,car,0
-721,34,3,own,little,rich,1337,9,radio/TV,0
-946,30,2,own,quite rich,moderate,8358,48,car,1
-974,36,2,rent,little,little,7297,60,business,0
-333,24,3,own,moderate,moderate,7408,60,car,0
-888,23,2,own,little,moderate,15672,48,business,0
-590,60,2,own,little,little,2246,12,furniture/equipment,0
-813,24,2,own,little,little,9629,36,car,0
+case_id,person_age,person_education,person_income,person_emp_exp,person_home_ownership,loan_amnt,loan_intent,loan_int_rate,credit_score,previous_loan_defaults_on_file,loan_approved
+8643,23.0,High School,65651.0,1,MORTGAGE,15000.0,EDUCATION,16.63,608,No,1
+27243,29.0,High School,157003.0,4,MORTGAGE,30000.0,EDUCATION,18.79,602,No,0
+20650,32.0,Associate,35496.0,11,RENT,5000.0,MEDICAL,10.59,642,No,0
+24276,35.0,Associate,64466.0,12,RENT,4200.0,HOMEIMPROVEMENT,11.71,673,No,0
+21863,31.0,Master,54083.0,11,MORTGAGE,12000.0,EDUCATION,12.53,607,No,1
+42593,30.0,Associate,29557.0,6,RENT,5000.0,MEDICAL,10.29,534,No,1
+19736,32.0,High School,30060.0,7,RENT,3500.0,MEDICAL,11.86,702,No,0
+36269,33.0,Bachelor,53964.0,6,RENT,5000.0,DEBTCONSOLIDATION,10.12,625,No,0
+43255,39.0,High School,27252.0,15,RENT,2955.0,EDUCATION,14.26,689,No,1
+44954,36.0,Master,71544.0,13,RENT,10000.0,EDUCATION,10.85,576,No,1
+28599,34.0,Bachelor,81920.0,14,MORTGAGE,15000.0,DEBTCONSOLIDATION,13.85,645,No,1
+25587,30.0,Master,88419.0,7,RENT,12000.0,VENTURE,14.26,646,No,1
+19156,28.0,Associate,43102.0,2,RENT,2400.0,DEBTCONSOLIDATION,7.29,591,No,1
+1741,22.0,High School,32465.0,0,RENT,1900.0,DEBTCONSOLIDATION,7.29,571,No,1
+31205,37.0,High School,46707.0,15,RENT,12000.0,VENTURE,8.94,667,No,1
+7466,22.0,Bachelor,34358.0,2,RENT,6800.0,MEDICAL,8.49,670,No,0
+9313,24.0,Associate,74438.0,0,MORTGAGE,3000.0,PERSONAL,15.62,628,No,0
+42413,27.0,Associate,127479.0,4,MORTGAGE,34121.0,EDUCATION,17.44,587,No,1
+2756,24.0,Associate,41613.0,3,MORTGAGE,10000.0,MEDICAL,12.18,650,No,0
+41985,28.0,High School,43091.0,4,RENT,6000.0,MEDICAL,11.94,650,No,0
+42630,31.0,Master,22371.0,6,RENT,1041.0,DEBTCONSOLIDATION,13.74,667,No,1
+22333,29.0,High School,36794.0,5,RENT,7000.0,MEDICAL,13.35,614,No,0
+4340,25.0,High School,25389.0,3,RENT,4750.0,VENTURE,12.98,592,No,0
+5831,22.0,Associate,40920.0,1,RENT,5500.0,DEBTCONSOLIDATION,11.01,619,No,1
+43982,24.0,Associate,53963.0,4,RENT,5000.0,MEDICAL,13.36,688,No,1
+8831,23.0,High School,44246.0,0,RENT,8000.0,MEDICAL,7.51,564,No,1
+28136,28.0,High School,271185.0,8,MORTGAGE,9000.0,EDUCATION,16.95,543,No,1
+16522,22.0,High School,41692.0,0,RENT,6500.0,VENTURE,13.22,593,No,1
+20645,29.0,Associate,34666.0,5,RENT,5000.0,VENTURE,11.01,632,No,0
+28134,27.0,Associate,36488.0,6,RENT,4975.0,PERSONAL,10.37,563,No,0
+43074,27.0,Bachelor,84450.0,2,MORTGAGE,20000.0,DEBTCONSOLIDATION,13.87,680,No,1
+16801,24.0,Associate,118578.0,4,RENT,16000.0,VENTURE,16.32,672,No,1
+34284,23.0,High School,64439.0,0,MORTGAGE,7362.0,MEDICAL,14.16,626,No,0
+16189,23.0,Bachelor,32230.0,2,MORTGAGE,7800.0,DEBTCONSOLIDATION,10.59,651,No,0
+34646,22.0,Master,29983.0,3,RENT,1500.0,EDUCATION,13.02,605,No,0
+38992,26.0,High School,65222.0,2,RENT,13565.0,EDUCATION,9.57,619,No,0
+20735,28.0,Master,44179.0,5,MORTGAGE,15450.0,MEDICAL,11.01,656,No,1
+23839,27.0,Associate,94232.0,4,RENT,9600.0,EDUCATION,17.14,641,No,0
+9100,26.0,Associate,67830.0,1,RENT,8000.0,HOMEIMPROVEMENT,13.49,567,No,1
+13333,24.0,High School,53282.0,0,RENT,2800.0,PERSONAL,14.17,661,No,1
+6829,22.0,Bachelor,82781.0,0,RENT,6000.0,EDUCATION,19.13,610,No,0
+42905,25.0,Associate,47892.0,0,RENT,8173.0,PERSONAL,12.39,624,No,1
+12468,23.0,Master,54889.0,0,RENT,12000.0,PERSONAL,5.79,571,No,0
+18743,35.0,Associate,82102.0,12,RENT,16000.0,PERSONAL,11.58,661,No,0
+15073,23.0,Associate,72824.0,0,RENT,1600.0,MEDICAL,13.99,626,No,0
+5338,22.0,Bachelor,47714.0,0,MORTGAGE,5500.0,HOMEIMPROVEMENT,5.99,687,No,1
+9305,25.0,Master,33578.0,3,RENT,5000.0,DEBTCONSOLIDATION,7.9,615,No,1
+3861,26.0,Associate,47665.0,4,MORTGAGE,10000.0,HOMEIMPROVEMENT,12.21,633,No,0
+23777,35.0,Associate,79021.0,16,MORTGAGE,25000.0,DEBTCONSOLIDATION,9.51,664,No,0
+25616,28.0,Bachelor,105762.0,7,MORTGAGE,12000.0,PERSONAL,15.21,546,No,0
+29294,39.0,Associate,24588.0,21,MORTGAGE,6000.0,MEDICAL,11.14,565,No,1
+6303,21.0,High School,41704.0,0,RENT,6000.0,PERSONAL,12.53,604,No,0
+9778,26.0,High School,70693.0,6,MORTGAGE,25000.0,MEDICAL,13.55,672,No,1
+23764,29.0,High School,59917.0,9,RENT,9500.0,EDUCATION,11.01,628,No,1
+23357,27.0,High School,75500.0,4,MORTGAGE,4150.0,EDUCATION,18.39,635,No,0
+12819,24.0,Bachelor,88357.0,0,MORTGAGE,25000.0,EDUCATION,16.32,650,No,1
+42197,27.0,Bachelor,101442.0,4,MORTGAGE,20000.0,DEBTCONSOLIDATION,13.76,560,No,1
+43307,27.0,Associate,57744.0,5,RENT,4000.0,PERSONAL,14.62,626,No,1
+9814,21.0,Bachelor,42862.0,1,RENT,9000.0,MEDICAL,8.94,637,No,0
+5531,21.0,Bachelor,71970.0,0,RENT,5000.0,MEDICAL,14.22,716,No,1
+24131,28.0,Master,66436.0,9,MORTGAGE,18000.0,MEDICAL,12.99,686,No,1
+38600,26.0,Associate,61221.0,1,MORTGAGE,24194.0,HOMEIMPROVEMENT,11.0,656,No,0
+17125,22.0,Associate,74600.0,2,RENT,10000.0,EDUCATION,14.22,620,No,0
+4910,21.0,High School,41399.0,0,RENT,5000.0,PERSONAL,9.25,611,No,1
+44405,26.0,High School,49062.0,5,RENT,8000.0,DEBTCONSOLIDATION,13.07,631,No,1
+44313,38.0,Associate,51175.0,18,RENT,10971.0,PERSONAL,13.95,656,No,1
+20419,27.0,Master,42182.0,7,RENT,4600.0,PERSONAL,11.01,707,No,0
+44952,29.0,Bachelor,89798.0,8,RENT,16000.0,HOMEIMPROVEMENT,13.73,696,No,1
+22326,31.0,Master,36673.0,4,RENT,7000.0,EDUCATION,6.92,644,No,0
+18765,33.0,Master,32385.0,12,MORTGAGE,15000.0,DEBTCONSOLIDATION,9.76,684,No,1
+42526,25.0,Associate,65703.0,6,RENT,7966.0,HOMEIMPROVEMENT,13.71,646,No,1
+30789,37.0,High School,53603.0,15,RENT,9200.0,PERSONAL,12.84,719,No,1
+20119,27.0,Associate,39556.0,8,MORTGAGE,1200.0,HOMEIMPROVEMENT,6.76,637,No,1
+1805,24.0,Associate,35688.0,0,MORTGAGE,11000.0,PERSONAL,11.71,603,No,1
+7740,26.0,High School,66431.0,6,MORTGAGE,4800.0,PERSONAL,11.01,598,No,0
+17568,26.0,Associate,90957.0,4,RENT,20000.0,PERSONAL,6.91,582,No,0
+14637,24.0,Bachelor,61001.0,2,RENT,2000.0,HOMEIMPROVEMENT,11.01,677,No,0
+5634,23.0,Master,55544.0,0,MORTGAGE,10000.0,VENTURE,16.11,662,No,0
+30541,40.0,High School,63651.0,16,MORTGAGE,7000.0,HOMEIMPROVEMENT,14.65,652,No,1
+4054,23.0,Master,78112.0,1,RENT,4000.0,HOMEIMPROVEMENT,11.01,635,No,1
+33699,42.0,Associate,32725.0,20,RENT,5000.0,MEDICAL,10.42,689,No,0
+31252,38.0,High School,30886.0,11,RENT,3000.0,MEDICAL,11.01,679,No,1
+29107,33.0,High School,54555.0,13,MORTGAGE,8000.0,EDUCATION,16.49,692,No,1
+22062,31.0,Associate,56589.0,8,MORTGAGE,8000.0,EDUCATION,13.49,602,No,1
+11241,23.0,Associate,56770.0,2,RENT,10000.0,PERSONAL,14.26,661,No,1
+29457,39.0,High School,48037.0,15,RENT,1500.0,DEBTCONSOLIDATION,10.36,710,No,1
+39580,33.0,Master,59371.0,10,RENT,10000.0,PERSONAL,14.54,654,No,0
+22264,27.0,Associate,60737.0,6,RENT,6400.0,HOMEIMPROVEMENT,13.23,539,No,0
+6023,24.0,Bachelor,31246.0,2,RENT,5625.0,DEBTCONSOLIDATION,12.68,687,No,0
+5379,26.0,Associate,72007.0,5,RENT,8500.0,PERSONAL,11.83,677,No,0
+6835,26.0,Associate,77144.0,3,RENT,6000.0,PERSONAL,15.21,638,No,1
+10158,23.0,High School,43423.0,2,RENT,9600.0,VENTURE,11.89,592,No,0
+43908,30.0,Bachelor,230139.0,6,MORTGAGE,11873.0,PERSONAL,17.24,633,No,1
+21531,27.0,High School,37312.0,5,RENT,6000.0,MEDICAL,7.66,627,No,0
+44051,38.0,Bachelor,63903.0,16,RENT,6532.0,HOMEIMPROVEMENT,14.14,754,No,1
+6859,23.0,Associate,79162.0,0,RENT,6000.0,EDUCATION,14.42,565,No,1
+34821,37.0,Bachelor,54985.0,13,RENT,12369.0,MEDICAL,8.35,705,No,0
+19677,29.0,High School,68102.0,7,RENT,3200.0,PERSONAL,11.01,587,No,0
+7248,22.0,Bachelor,34351.0,0,RENT,6975.0,EDUCATION,12.29,677,No,0
+30757,49.0,Associate,70552.0,29,MORTGAGE,16000.0,PERSONAL,15.33,626,No,1
+42044,24.0,Bachelor,63295.0,4,MORTGAGE,5000.0,PERSONAL,14.22,567,No,0
+31952,36.0,Bachelor,24919.0,12,RENT,4375.0,EDUCATION,10.74,673,No,0
+17065,22.0,Associate,55906.0,1,RENT,6200.0,DEBTCONSOLIDATION,11.01,625,No,1
+5883,24.0,Associate,57321.0,0,MORTGAGE,9000.0,MEDICAL,8.94,538,No,0
+16169,22.0,Associate,34637.0,0,RENT,1000.0,PERSONAL,10.25,582,No,1
+6100,24.0,Master,56084.0,0,RENT,5975.0,EDUCATION,14.46,665,No,1
+17646,24.0,High School,84919.0,2,RENT,14400.0,VENTURE,12.68,601,No,0
+30103,38.0,Associate,130230.0,17,RENT,5000.0,PERSONAL,15.21,641,No,1
+18848,31.0,Master,34769.0,10,RENT,1500.0,PERSONAL,11.11,639,No,0
+15884,25.0,High School,93543.0,1,RENT,19200.0,VENTURE,11.01,648,No,0
+34604,24.0,Associate,37727.0,2,RENT,8000.0,DEBTCONSOLIDATION,7.0,662,No,0
+5032,24.0,High School,48815.0,4,RENT,5000.0,VENTURE,14.11,579,No,1
+17487,22.0,Associate,24718.0,0,RENT,5000.0,VENTURE,11.86,658,No,0
+33690,37.0,Master,44303.0,14,RENT,9000.0,MEDICAL,11.76,632,No,0
+3864,26.0,Bachelor,37097.0,5,RENT,4000.0,MEDICAL,14.27,673,No,1
+35004,27.0,Master,42701.0,6,RENT,6000.0,MEDICAL,11.87,663,No,0
+3322,23.0,High School,47198.0,2,RENT,3600.0,DEBTCONSOLIDATION,13.61,606,No,0
+40720,22.0,High School,64916.0,1,MORTGAGE,16000.0,MEDICAL,11.59,607,No,0
+17398,22.0,Bachelor,46821.0,0,RENT,10000.0,EDUCATION,13.49,594,No,0
+34113,39.0,High School,36821.0,14,RENT,2290.0,MEDICAL,14.04,634,No,0

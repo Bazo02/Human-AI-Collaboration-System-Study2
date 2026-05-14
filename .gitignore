@@ -29,11 +29,18 @@ outputs/*.csv
 outputs/*.png
 outputs/*.json
 
+static/results/*.png
+
+# -----------------------------
+# Datasets
+# -----------------------------
+data/loan_data.csv
+
 # -----------------------------
 # Trained models
 # -----------------------------
-#*.joblib
-#*.pkl
+# *.joblib
+# *.pkl
 
 # -----------------------------
 # Environment variables

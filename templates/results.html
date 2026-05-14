@@ -100,11 +100,6 @@
             <td>N/A</td>
             <td>{{ "%.3f"|format(results.summary.ai_prob_approve_by_condition.ai) if results.summary.ai_prob_approve_by_condition and 'ai' in results.summary.ai_prob_approve_by_condition else "N/A" }}</td>
           </tr>
-          <tr>
-            <td>Explanation open rate</td>
-            <td>{{ "%.3f"|format(results.summary.explanation_open_rate_by_condition.baseline) if results.summary.explanation_open_rate_by_condition and 'baseline' in results.summary.explanation_open_rate_by_condition else "N/A" }}</td>
-            <td>{{ "%.3f"|format(results.summary.explanation_open_rate_by_condition.ai) if results.summary.explanation_open_rate_by_condition and 'ai' in results.summary.explanation_open_rate_by_condition else "N/A" }}</td>
-          </tr>
         </tbody>
       </table>
     </div>
@@ -288,7 +283,6 @@
               <th>AI time</th>
               <th>AI followed</th>
               <th>AI confidence</th>
-              <th>Expl. opened</th>
               <th>Trust</th>
               <th>SUS</th>
             </tr>
@@ -305,7 +299,6 @@
                 <td>{{ row.ai_avg_time_seconds if row.ai_avg_time_seconds == row.ai_avg_time_seconds else "N/A" }}</td>
                 <td>{{ row.ai_ai_followed_rate if row.ai_ai_followed_rate == row.ai_ai_followed_rate else "N/A" }}</td>
                 <td>{{ row.ai_avg_ai_confidence if row.ai_avg_ai_confidence == row.ai_avg_ai_confidence else "N/A" }}</td>
-                <td>{{ row.ai_explanation_open_rate if row.ai_explanation_open_rate == row.ai_explanation_open_rate else "N/A" }}</td>
                 <td>{{ row.trust_score if row.trust_score == row.trust_score else "N/A" }}</td>
                 <td>{{ row.sus_score if row.sus_score == row.sus_score else "N/A" }}</td>
               </tr>
@@ -321,13 +314,15 @@
     {% if results.summary.comments and results.summary.comments|length > 0 %}
       <div class="case-box">
         {% for item in results.summary.comments %}
-          <div class="case-item">
-            <div>
-              <span class="case-label">Participant:</span> {{ item.participant_id }}
-              <span class="small-text">({{ item.condition }})</span>
+          {% if item.comment and item.comment|string|lower not in ["nan", "none", ""] %}
+            <div class="case-item">
+              <div>
+                <span class="case-label">Participant:</span> {{ item.participant_id }}
+                <span class="small-text">({{ item.condition }})</span>
+              </div>
+              <div class="case-value" style="margin-top:6px;">{{ item.comment }}</div>
             </div>
-            <div class="case-value" style="margin-top:6px;">{{ item.comment }}</div>
-          </div>
+          {% endif %}
         {% endfor %}
       </div>
     {% else %}
@@ -345,7 +340,6 @@
         ("ai_followed", "AI Followed Rate", "Proportion of AI-condition cases where the participant matched the AI recommendation."),
         ("ai_confidence", "AI Confidence", "Mean AI confidence score across AI-condition decisions."),
         ("ai_prob_approve", "AI Approval Probability", "Mean model approval probability across AI-condition decisions."),
-        ("explanation_open_rate", "Explanation Open Rate", "Proportion of cases where the explanation panel was opened or viewed."),
         ("ai_seen_rate", "AI Seen Rate", "Proportion of cases where the AI panel was present on screen."),
         ("trust_vs_ai_followed", "Trust vs AI-Followed Rate", "Scatter plot of trust score against AI-followed rate per participant."),
         ("accuracy_groups", "Baseline Accuracy: Improved vs Worsened", "Histogram comparing baseline accuracy for participants who improved vs worsened with AI assistance."),

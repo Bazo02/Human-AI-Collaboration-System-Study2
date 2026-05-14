@@ -6,9 +6,9 @@ This is the Study 2 replication of the [Study 1 system](https://github.com/Bazo0
 
 1. **Counterbalanced condition order** — participants are alternately assigned baseline-first (AB) or AI-first (BA) to control for learning effects
 2. **Embedded explanations** — SHAP-based feature explanations are always visible alongside the AI recommendation, replacing the optional toggle from Study 1
-3. **Improved AI model** — Random Forest with SHAP (TreeExplainer) replaces logistic regression, providing more calibrated confidence scores and per-case explanations
+3. **Improved AI model** — XGBoost with SHAP (TreeExplainer) replaces logistic regression, providing more calibrated confidence scores and per-case explanations
 
-The dataset is also changed from the loan approval dataset used in Study 1 to the **German Credit Risk dataset**, which produces more realistic uncertainty in the AI model and better borderline cases for participants to evaluate.
+The dataset is also changed from the loan approval dataset used in Study 1 to the **Loan Approval Classification dataset**, which produces more realistic uncertainty in the AI model and better borderline cases for participants to evaluate.
 
 Participants complete 24 credit decisions:
 
@@ -34,9 +34,9 @@ The system measures:
 |---|---|---|
 | Condition order | Baseline always first | Counterbalanced (AB / BA) |
 | Explanations | Optional toggle (hidden by default) | Always visible (embedded) |
-| AI model | Logistic regression | Random Forest |
+| AI model | Logistic regression | XGBoost |
 | Explanations method | Linear coefficients (x_i × coef_i) | SHAP TreeExplainer (per-case) |
-| Dataset | Loan approval (Kaggle) | German Credit Risk |
+| Dataset | Loan approval (Kaggle) | Loan Approval Classification |
 | Mean AI confidence | 0.875 | ~0.58 |
 | Borderline cases | 3 / 120 | 55 / 120 |
 
@@ -45,7 +45,8 @@ The system measures:
 ## Tech Stack
 
 * Python (Flask)
-* scikit-learn (Random Forest)
+* scikit-learn
+* XGBoost
 * SHAP (TreeExplainer)
 * pandas
 * matplotlib (server-side backend)
@@ -79,7 +80,7 @@ pip install -r requirements.txt
 
 python -m app.data_prep
 python -m app.model_train
-python wsgi.py
+python -m app.main
 ```
 
 Then open:

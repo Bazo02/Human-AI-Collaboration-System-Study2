@@ -112,7 +112,6 @@ def log_decision(
     time_ms: Optional[int],
     ai_followed: Optional[int],
     ai_seen: Optional[int],
-    explanation_opened: Optional[int],
     ai_recommendation: Optional[str] = None,
     ai_confidence: Optional[float] = None,
     ai_prob_approve: Optional[float] = None,
@@ -124,10 +123,10 @@ def log_decision(
         INSERT INTO decisions (
             ts_utc, participant_id, condition, case_id,
             decision, ground_truth, correct, time_ms,
-            ai_followed, ai_seen, explanation_opened,
+            ai_followed, ai_seen,
             ai_recommendation, ai_confidence, ai_prob_approve
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             _now_utc_iso(),
@@ -140,7 +139,6 @@ def log_decision(
             None if time_ms is None else int(time_ms),
             None if ai_followed is None else int(ai_followed),
             None if ai_seen is None else int(ai_seen),
-            None if explanation_opened is None else int(explanation_opened),
             None if ai_recommendation is None else str(ai_recommendation),
             None if ai_confidence is None else float(ai_confidence),
             None if ai_prob_approve is None else float(ai_prob_approve),
