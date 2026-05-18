@@ -35,11 +35,10 @@ The system measures:
 | Condition order | Baseline always first | Counterbalanced (AB / BA) |
 | Explanations | Optional toggle (hidden by default) | Always visible (embedded) |
 | AI model | Logistic regression | XGBoost |
-| Explanations method | Linear coefficients (x_i × coef_i) | SHAP TreeExplainer (per-case) |
+| Explanations method | Linear coefficients  | SHAP TreeExplainer (per-case) |
 | Dataset | Loan approval (Kaggle) | Loan Approval Classification |
-| AI confidence | High and stable (~0.875) | Lower and more varied confidence scores |
 | Borderline cases | Limited | Expanded borderline selection |
-| Model test accuracy | ~0.78 | 0.928 |
+
 
 ---
 
