@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from app.db import get_conn, init_db
 
 
+# Returns the current UTC time as an ISO string
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -16,6 +17,7 @@ def _now_utc_iso() -> str:
 init_db()
 
 
+# Saves a new participant's info to the database
 def log_participant(
     participant_id: str,
     age_group: str,
@@ -54,6 +56,7 @@ def log_participant(
     conn.close()
 
 
+# Marks a participant as having completed the study
 def mark_participant_completed(participant_id: str):
     conn = get_conn()
     cur = conn.cursor()
@@ -75,6 +78,7 @@ def mark_participant_completed(participant_id: str):
     conn.close()
 
 
+# Logs a user interaction event with an optional JSON payload
 def log_event(
     participant_id: str,
     condition: str,
@@ -102,6 +106,7 @@ def log_event(
     conn.close()
 
 
+# Saves a participant's approve/reject decision for one loan case
 def log_decision(
     participant_id: str,
     condition: str,
@@ -148,6 +153,7 @@ def log_decision(
     conn.close()
 
 
+# Saves a participant's survey answers as JSON
 def log_survey(participant_id: str, condition: str, answers: Dict[str, Any]):
     conn = get_conn()
     cur = conn.cursor()

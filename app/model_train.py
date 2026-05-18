@@ -1,3 +1,5 @@
+# app/model_train.py
+
 from __future__ import annotations
 
 import os
@@ -30,6 +32,7 @@ EXCLUDE_COLS = set([
 RANDOM_STATE = 42
 
 
+# Loads the training dataset from CSV
 def _load_training_data() -> pd.DataFrame:
     if os.path.exists(DATA_PATH):
         df = pd.read_csv(DATA_PATH)
@@ -47,6 +50,7 @@ def _load_training_data() -> pd.DataFrame:
     return df
 
 
+# Removes duplicates and fills in missing values with median or "Unknown"
 def _clean_training_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -68,6 +72,7 @@ def _clean_training_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Splits feature columns into numeric and categorical lists
 def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     feature_cols = [c for c in df.columns if c not in EXCLUDE_COLS]
     numeric_cols = [c for c in feature_cols if df[c].dtype.kind in "biufc"]
@@ -76,6 +81,7 @@ def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     return numeric_cols, categorical_cols
 
 
+# Trains an XGBoost model, evaluates it, and saves it to disk
 def main() -> None:
     df = _load_training_data()
     df = _clean_training_data(df)

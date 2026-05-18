@@ -1,9 +1,11 @@
 # app/explanations.py
+
 from __future__ import annotations
 
 from typing import Any
 
 
+# Formats a raw feature value into a readable string for display
 def format_feature_value(feature: str, value: Any) -> str:
     if value is None:
         return ""
@@ -57,6 +59,7 @@ def format_feature_value(feature: str, value: Any) -> str:
     return text.replace("_", " ").title()
 
 
+# Builds a short human-readable phrase describing a feature and its value
 def _feature_phrase(feature: str, formatted_value: str) -> str:
     if feature == "person_income":
         return f"Annual income: {formatted_value}"
@@ -94,6 +97,7 @@ def _feature_phrase(feature: str, formatted_value: str) -> str:
     return feature.replace("_", " ").title()
 
 
+# Builds the full explanation sentence shown to the user for one feature
 def build_reason(
     feature: str,
     value: Any,

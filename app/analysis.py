@@ -25,6 +25,7 @@ except Exception:
 RESULTS_DIRNAME = "results"
 
 
+# Tries to convert a value to int, returns None if it fails
 def _to_int(x) -> Optional[int]:
     try:
         return int(x)
@@ -32,6 +33,7 @@ def _to_int(x) -> Optional[int]:
         return None
 
 
+# Calculates the SUS score from survey answers
 def _compute_sus_from_answers(answers: Dict[str, Any]) -> Optional[float]:
     scores: List[int] = []
     for i in range(1, 11):
@@ -46,6 +48,7 @@ def _compute_sus_from_answers(answers: Dict[str, Any]) -> Optional[float]:
     return float(sum(scores) * 2.5)
 
 
+# Calculates the average trust score from the three trust questions
 def _compute_trust_from_answers(answers: Dict[str, Any]) -> Optional[float]:
     vals = []
     for k in ["trust_q1", "trust_q2", "trust_q3"]:
@@ -56,6 +59,7 @@ def _compute_trust_from_answers(answers: Dict[str, Any]) -> Optional[float]:
     return float(sum(vals) / len(vals))
 
 
+# Extracts the free-text comment from survey answers if one exists
 def _extract_comment(answers: Dict[str, Any]) -> str:
     candidate_keys = [
         "comment", "comments", "feedback", "message",
@@ -84,6 +88,7 @@ def _extract_comment(answers: Dict[str, Any]) -> str:
     return ""
 
 
+# Reads a full database table and returns it as a DataFrame
 def _read_table_as_df(table: str) -> pd.DataFrame:
     conn = get_conn()
     try:
@@ -94,6 +99,7 @@ def _read_table_as_df(table: str) -> pd.DataFrame:
         conn.close()
 
 
+# Parses raw survey rows and computes SUS, trust score, and comment per participant
 def _parse_surveys_df(raw_surveys: pd.DataFrame) -> pd.DataFrame:
     if raw_surveys.empty:
         return raw_surveys
@@ -117,6 +123,7 @@ def _parse_surveys_df(raw_surveys: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Runs a paired t-test between two conditions and returns descriptive stats
 def _paired_stats(df: pd.DataFrame, baseline_col: str, ai_col: str) -> Dict[str, Any]:
     if df.empty or baseline_col not in df.columns or ai_col not in df.columns:
         return {}
@@ -166,13 +173,8 @@ def _paired_stats(df: pd.DataFrame, baseline_col: str, ai_col: str) -> Dict[str,
     return result
 
 
+# Groups participants by whether accuracy improved, worsened, or stayed the same with AI
 def _accuracy_improvement_groups(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Splits participants into improved, worsened, and unchanged groups
-    based on accuracy change from baseline to AI condition.
-    Also runs an independent t-test comparing baseline accuracy between
-    the improved and worsened groups.
-    """
     if df.empty:
         return {}
 
@@ -198,7 +200,6 @@ def _accuracy_improvement_groups(df: pd.DataFrame) -> Dict[str, Any]:
         "worsened_baseline_accuracy_mean": float(worsened["baseline_accuracy"].mean()) if not worsened.empty else None,
     }
 
-    # Independent t-test: baseline accuracy of improved vs worsened
     if scipy_stats is not None and len(improved) > 1 and len(worsened) > 1:
         t_stat, p_value = scipy_stats.ttest_ind(
             improved["baseline_accuracy"].to_numpy(),
@@ -214,10 +215,8 @@ def _accuracy_improvement_groups(df: pd.DataFrame) -> Dict[str, Any]:
     return result
 
 
+# Computes Spearman correlation between trust score and AI-followed rate
 def _spearman_trust_vs_ai_followed(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Computes Spearman correlation between trust score and AI-followed rate.
-    """
     if df.empty:
         return {}
 
@@ -239,10 +238,8 @@ def _spearman_trust_vs_ai_followed(df: pd.DataFrame) -> Dict[str, Any]:
     return {}
 
 
+# Returns descriptive statistics for the distribution of AI-followed rates
 def _ai_followed_distribution(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Returns descriptive statistics for AI-followed rate distribution.
-    """
     if df.empty or "ai_ai_followed_rate" not in df.columns:
         return {}
 
@@ -259,11 +256,8 @@ def _ai_followed_distribution(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+# Splits results by condition order (AB vs BA) to check for order effects
 def _counterbalance_subgroup_stats(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Study 2: Splits accuracy and decision time results by condition_order (AB vs BA)
-    to check whether presentation order influenced outcomes.
-    """
     if df.empty or "condition_order" not in df.columns:
         return {}
 
@@ -285,7 +279,6 @@ def _counterbalance_subgroup_stats(df: pd.DataFrame) -> Dict[str, Any]:
 
         results[order] = entry
 
-    # Independent t-test: AI accuracy AB vs BA
     if scipy_stats is not None and "AB" in results and "BA" in results:
         ab = df[df["condition_order"] == "AB"]["ai_accuracy"].dropna().to_numpy()
         ba = df[df["condition_order"] == "BA"]["ai_accuracy"].dropna().to_numpy()
@@ -297,6 +290,7 @@ def _counterbalance_subgroup_stats(df: pd.DataFrame) -> Dict[str, Any]:
     return results
 
 
+# Builds one row per participant by merging decisions, surveys, and participant info
 def _participant_level_summary(
     participants: pd.DataFrame,
     decisions: pd.DataFrame,
@@ -359,6 +353,7 @@ def _participant_level_summary(
     return merged.sort_values("participant_id").reset_index(drop=True)
 
 
+# Saves a simple bar chart to disk
 def _make_bar_plot(
     labels: List[str],
     values: List[float],
@@ -375,6 +370,7 @@ def _make_bar_plot(
     plt.close()
 
 
+# Saves a bar chart with rotated x-axis labels to disk
 def _make_count_plot(
     labels: List[str],
     values: List[int],
@@ -392,6 +388,7 @@ def _make_count_plot(
     plt.close()
 
 
+# Saves a scatter plot to disk
 def _make_scatter_plot(
     x: List[float],
     y: List[float],
@@ -410,6 +407,7 @@ def _make_scatter_plot(
     plt.close()
 
 
+# Loads all data, computes statistics, generates plots, and returns a summary dict
 def generate_results(static_root: str) -> Dict[str, Any]:
     participants = _read_table_as_df("participants")
     decisions = _read_table_as_df("decisions")
@@ -496,7 +494,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
                     "comment": c,
                 })
 
-    # Extended statistics
     accuracy_groups = _accuracy_improvement_groups(participant_summary)
     spearman_trust_followed = _spearman_trust_vs_ai_followed(participant_summary)
     ai_followed_dist = _ai_followed_distribution(participant_summary)
@@ -504,6 +501,7 @@ def generate_results(static_root: str) -> Dict[str, Any]:
 
     cond_order = ["baseline", "ai"]
 
+    # Returns labels and values in the correct condition order for plotting
     def ordered_values(d: Dict[str, float]) -> Tuple[List[str], List[float]]:
         labels = [c for c in cond_order if c in d]
         vals = [d[c] for c in labels]
@@ -559,7 +557,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
         _make_bar_plot(labels, vals, "AI seen rate by condition", "Rate (0–1)", out)
         plots["ai_seen_rate"] = f"/static/{RESULTS_DIRNAME}/ai_seen_rate.png"
 
-    # Scatter: trust score vs AI-followed rate
     if not participant_summary.empty:
         needed = ["trust_score", "ai_ai_followed_rate"]
         if all(c in participant_summary.columns for c in needed):
@@ -576,7 +573,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
                 )
                 plots["trust_vs_ai_followed"] = f"/static/{RESULTS_DIRNAME}/trust_vs_ai_followed.png"
 
-    # Accuracy distribution: improved vs worsened
     if not participant_summary.empty:
         needed = ["baseline_accuracy", "ai_accuracy"]
         if all(c in participant_summary.columns for c in needed):
@@ -600,7 +596,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
                 plt.close()
                 plots["accuracy_groups"] = f"/static/{RESULTS_DIRNAME}/accuracy_groups.png"
 
-    # Counterbalance: accuracy by condition order
     if counterbalance_stats and len(counterbalance_stats) >= 2:
         orders = [o for o in ["AB", "BA"] if o in counterbalance_stats]
         ai_acc_vals = [counterbalance_stats[o].get("ai_accuracy_mean") for o in orders if counterbalance_stats[o].get("ai_accuracy_mean") is not None]
@@ -641,7 +636,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
             _make_count_plot(counts.index.tolist(), counts.astype(int).tolist(), "Finance familiarity distribution", "Count", out)
             plots["finance_familiarity_distribution"] = f"/static/{RESULTS_DIRNAME}/finance_familiarity_distribution.png"
 
-    # Condition order distribution
     if not participants.empty and "condition_order" in participants.columns:
         counts = participants["condition_order"].fillna("").astype(str).str.strip()
         counts = counts[counts != ""].value_counts()
@@ -677,7 +671,6 @@ def generate_results(static_root: str) -> Dict[str, Any]:
         "ai_prob_approve_by_condition": ai_prob_approve_by_cond,
         "ai_seen_rate_by_condition": ai_seen_by_cond,
         "paired_tests": paired_tests,
-        # Extended statistics for Study 2
         "accuracy_improvement_groups": accuracy_groups,
         "spearman_trust_vs_ai_followed": spearman_trust_followed,
         "ai_followed_distribution": ai_followed_dist,

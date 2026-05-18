@@ -22,6 +22,7 @@ N_CLEAR_REJECT = 40
 RANDOM_STATE = 42
 
 
+# Removes duplicates, fills missing values, and adds a case_id column
 def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -53,6 +54,7 @@ def _basic_clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Splits columns into numeric and categorical lists for the model
 def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     exclude = set(["case_id", TARGET_COL] + DROP_COLS_FOR_UI)
 
@@ -74,6 +76,7 @@ def _split_columns(df: pd.DataFrame) -> Tuple[List[str], List[str]]:
     return numeric_cols, categorical_cols
 
 
+# Trains a quick model and adds approval probability scores to each case
 def _score_cases(df: pd.DataFrame) -> pd.DataFrame:
     from sklearn.compose import ColumnTransformer
     from sklearn.pipeline import Pipeline
@@ -114,6 +117,7 @@ def _score_cases(df: pd.DataFrame) -> pd.DataFrame:
     return scored
 
 
+# Returns n cases from df sorted by sort_col, excluding already selected IDs
 def _take_cases(
     df: pd.DataFrame,
     n: int,
@@ -129,6 +133,7 @@ def _take_cases(
     return available.sort_values(sort_col, ascending=ascending).head(n)
 
 
+# Selects a balanced set of borderline, clear-approve, and clear-reject cases
 def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
     scored = _score_cases(df)
 
@@ -209,6 +214,7 @@ def _select_study_cases(df: pd.DataFrame) -> pd.DataFrame:
     return selected
 
 
+# Drops columns that should not be shown in the UI
 def _drop_sensitive_and_unused_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -219,6 +225,7 @@ def _drop_sensitive_and_unused_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Runs the full data preparation pipeline and saves the result to CSV
 def main() -> None:
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(f"Could not find dataset at: {DATA_PATH}")

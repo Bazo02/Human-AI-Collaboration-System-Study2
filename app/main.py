@@ -1,4 +1,5 @@
 # app/main.py
+
 from __future__ import annotations
 
 import os
@@ -83,6 +84,7 @@ FIELD_ORDER = [
 ]
 
 
+# Loads the loan cases CSV, falling back to the full dataset if study cases don't exist
 def _load_cases() -> pd.DataFrame:
     if os.path.exists(CASES_FOR_STUDY_PATH):
         df = pd.read_csv(CASES_FOR_STUDY_PATH)
@@ -105,6 +107,7 @@ def _load_cases() -> pd.DataFrame:
 CASES_DF = _load_cases()
 
 
+# Randomly picks cases for one participant and splits them into baseline and AI blocks
 def _pick_cases_for_participant() -> Dict[str, List[Dict[str, Any]]]:
     seed = session.get("seed")
     if seed is None:
@@ -126,6 +129,7 @@ def _pick_cases_for_participant() -> Dict[str, List[Dict[str, Any]]]:
     }
 
 
+# Returns a cleaned case dict with sensitive columns removed and fields in display order
 def _ui_case_view(case_row: Dict[str, Any]) -> Dict[str, Any]:
     view = dict(case_row)
     view.pop(TARGET_COL, None)
@@ -143,6 +147,7 @@ def _ui_case_view(case_row: Dict[str, Any]) -> Dict[str, Any]:
     return ordered
 
 
+# Returns a case dict with only the features needed by the model
 def _features_for_model(case_row: Dict[str, Any]) -> Dict[str, Any]:
     feats = dict(case_row)
     feats.pop(TARGET_COL, None)
@@ -151,12 +156,14 @@ def _features_for_model(case_row: Dict[str, Any]) -> Dict[str, Any]:
     return feats
 
 
+# Redirects to the admin login page if the user is not authenticated as admin
 def _require_admin():
     if not session.get("is_admin"):
         return redirect(url_for("admin_login"))
     return None
 
 
+# Returns the condition order (AB or BA) and the first block for the next participant
 def _get_condition_order() -> Tuple[str, str]:
     count = db_get_participant_count()
     if count % 2 == 0:
@@ -164,6 +171,7 @@ def _get_condition_order() -> Tuple[str, str]:
     return "BA", "ai"
 
 
+# Returns the next block name given the current block and condition order
 def _get_next_block(current_block: str, condition_order: str) -> Optional[str]:
     if condition_order == "AB":
         return "ai" if current_block == "baseline" else None
@@ -171,11 +179,13 @@ def _get_next_block(current_block: str, condition_order: str) -> Optional[str]:
     return "baseline" if current_block == "ai" else None
 
 
+# Shows the landing page
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
 
 
+# Handles form submission from the landing page and sets up the session
 @app.route("/start", methods=["POST"])
 def start():
     participant_id = request.form.get("participant_id", "").strip()
@@ -219,6 +229,7 @@ def start():
     return redirect(url_for("guidelines"))
 
 
+# Shows the guidelines page and records when the participant accepts them
 @app.route("/guidelines", methods=["GET", "POST"])
 def guidelines():
     participant_id = session.get("participant_id")
@@ -241,6 +252,7 @@ def guidelines():
     return redirect(url_for("task"))
 
 
+# Shows the transition screen between the two study conditions
 @app.route("/transition", methods=["GET"])
 def transition():
     participant_id = session.get("participant_id")
@@ -259,6 +271,7 @@ def transition():
     return render_template("transition.html", next_condition=block)
 
 
+# Shows one loan case and, in the AI condition, the AI recommendation
 @app.route("/task", methods=["GET"])
 def task():
     participant_id = session.get("participant_id")
@@ -321,6 +334,7 @@ def task():
     )
 
 
+# Receives a decision from the browser, saves it, and returns the next URL
 @app.route("/submit_decision", methods=["POST"])
 def submit_decision():
     participant_id = session.get("participant_id")
@@ -404,6 +418,7 @@ def submit_decision():
     return jsonify({"ok": True, "next": "/task"})
 
 
+# Shows the post-task survey and saves answers on submission
 @app.route("/survey", methods=["GET", "POST"])
 def survey():
     participant_id = session.get("participant_id")
@@ -425,11 +440,13 @@ def survey():
     return redirect(url_for("done"))
 
 
+# Shows the completion page
 @app.route("/done", methods=["GET"])
 def done():
     return render_template("done.html")
 
 
+# Shows the admin login form and checks the password on POST
 @app.route("/admin", methods=["GET", "POST"])
 def admin_login():
     if request.method == "GET":
@@ -444,6 +461,7 @@ def admin_login():
     return render_template("admin_login.html", error="Wrong password")
 
 
+# Logs out the admin by removing the session flag
 @app.route("/admin/logout", methods=["GET"])
 def admin_logout():
     session.pop("is_admin", None)
@@ -451,6 +469,7 @@ def admin_logout():
     return redirect(url_for("index"))
 
 
+# Shows the admin dashboard with participant counts and stats
 @app.route("/admin/dashboard", methods=["GET"])
 def admin_dashboard():
     r = _require_admin()
@@ -470,6 +489,7 @@ def admin_dashboard():
     return render_template("admin_dashboard.html", counts=counts, participants=participants)
 
 
+# Generates and shows the results page with charts and statistics
 @app.route("/admin/results", methods=["GET"])
 def admin_results():
     r = _require_admin()
@@ -482,6 +502,7 @@ def admin_results():
     return render_template("results.html", results=results)
 
 
+# Lets the admin download the SQLite database file
 @app.route("/admin/download_db", methods=["GET"])
 def admin_download_db():
     r = _require_admin()
@@ -500,6 +521,7 @@ def admin_download_db():
     )
 
 
+# Lets the admin download the participant summary as a CSV file
 @app.route("/admin/download_participant_summary", methods=["GET"])
 def admin_download_participant_summary():
     r = _require_admin()
@@ -520,6 +542,7 @@ def admin_download_participant_summary():
     )
 
 
+# Lets the admin upload and replace the database file
 @app.route("/admin/upload_db", methods=["POST"])
 def admin_upload_db():
     r = _require_admin()
@@ -537,6 +560,7 @@ def admin_upload_db():
     return redirect(url_for("admin_dashboard"))
 
 
+# Deletes all data from every table
 @app.route("/admin/clear_all", methods=["POST"])
 def admin_clear_all_route():
     r = _require_admin()
@@ -549,6 +573,7 @@ def admin_clear_all_route():
     return redirect(url_for("admin_dashboard"))
 
 
+# Deletes all data for a specific participant
 @app.route("/admin/delete_participant", methods=["POST"])
 def admin_delete_participant_route():
     r = _require_admin()

@@ -28,6 +28,7 @@ DISPLAY_NAMES = {
 }
 
 
+# Loads the model from disk, only once, and caches it in memory
 def _load_model():
     global _MODEL
 
@@ -43,6 +44,7 @@ def _load_model():
     return _MODEL
 
 
+# Returns the preprocessor and classifier steps from a sklearn pipeline
 def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
     preprocess = None
     clf = None
@@ -56,6 +58,7 @@ def _get_pipeline_parts(model) -> Tuple[Optional[Any], Optional[Any]]:
     return preprocess, clf
 
 
+# Returns a set of feature names that are missing or empty in the input
 def _get_missing_original_features(X_dict: Dict[str, Any]) -> set:
     missing = set()
 
@@ -72,6 +75,7 @@ def _get_missing_original_features(X_dict: Dict[str, Any]) -> set:
     return missing
 
 
+# Maps a transformed feature name back to its original feature name
 def _base_feature_name(transformed_name: str) -> str:
     clean = (
         transformed_name.split("__", 1)[1]
@@ -86,6 +90,7 @@ def _base_feature_name(transformed_name: str) -> str:
     return clean
 
 
+# Sums SHAP values per original feature and sorts by absolute importance
 def _aggregate_shap_by_feature(
     feat_names: List[str],
     values: np.ndarray,
@@ -116,6 +121,7 @@ def _aggregate_shap_by_feature(
     )
 
 
+# Calculates SHAP contribution values for a single loan application
 def _compute_shap_contributions(
     model,
     X_dict: Dict[str, Any],
@@ -173,6 +179,7 @@ def _compute_shap_contributions(
         return []
 
 
+# Returns "high", "medium", or "low" based on the SHAP score magnitude
 def _weight_label(score: float) -> str:
     score = abs(score)
 
@@ -185,6 +192,7 @@ def _weight_label(score: float) -> str:
     return "low"
 
 
+# Returns "Low", "Moderate", or "High" based on the model's confidence
 def _confidence_label(confidence: float) -> str:
     if confidence < 0.65:
         return "Low"
@@ -195,6 +203,7 @@ def _confidence_label(confidence: float) -> str:
     return "High"
 
 
+# Builds a single explanation item dict for one feature
 def _make_explanation_item(
     feature: str,
     contribution: float,
@@ -216,6 +225,7 @@ def _make_explanation_item(
     }
 
 
+# Picks the top features by SHAP score and returns explanation items for them
 def _build_explanation(
     contribs: List[Tuple[str, float]],
     recommendation: str,
@@ -252,6 +262,7 @@ def _build_explanation(
     ]
 
 
+# Runs the model on a loan application and returns a recommendation with explanation
 def get_ai_advice(
     features: Dict[str, Any],
     approval_threshold: float = 0.50,

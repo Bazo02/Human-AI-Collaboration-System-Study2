@@ -4,6 +4,7 @@ let startTime = null;
 let aiSeen = false;
 let aiFollowed = null;
 
+// Sets up the timer and button listeners when the page loads
 document.addEventListener("DOMContentLoaded", function () {
   startTime = performance.now();
 
@@ -14,6 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("reject-btn")?.addEventListener("click", () => submitDecision("Reject"));
 });
 
+// Sends the participant's decision to the server and navigates to the next page
 function submitDecision(decision) {
   const caseId = document.getElementById("case-id")?.value;
   if (!caseId) return;
@@ -56,6 +58,7 @@ function submitDecision(decision) {
     });
 }
 
+// Disables the approve and reject buttons to prevent double submission
 function disableButtons() {
   const a = document.getElementById("approve-btn");
   const r = document.getElementById("reject-btn");
@@ -63,6 +66,7 @@ function disableButtons() {
   if (r) r.disabled = true;
 }
 
+// Re-enables the approve and reject buttons after an error
 function enableButtons() {
   const a = document.getElementById("approve-btn");
   const r = document.getElementById("reject-btn");

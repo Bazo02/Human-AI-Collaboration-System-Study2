@@ -9,12 +9,14 @@ from typing import Optional, Any, Dict
 from app.config import SQLITE_DB_PATH
 
 
+# Creates the parent directory for the database file if it doesn't exist
 def _ensure_parent_dir(path: str) -> None:
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
 
 
+# Opens and returns a connection to the SQLite database
 def get_conn() -> sqlite3.Connection:
     _ensure_parent_dir(SQLITE_DB_PATH)
     conn = sqlite3.connect(SQLITE_DB_PATH, check_same_thread=False)
@@ -22,6 +24,7 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+# Checks if a column already exists in a table
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cur = conn.cursor()
     cur.execute(f"PRAGMA table_info({table})")
@@ -29,11 +32,13 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(str(row[1]) == column for row in rows)
 
 
+# Adds a column to a table if it doesn't already exist
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
     if not _column_exists(conn, table, column):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 
+# Creates all database tables if they don't exist yet
 def init_db() -> None:
     conn = get_conn()
     cur = conn.cursor()
@@ -99,6 +104,7 @@ def init_db() -> None:
     conn.close()
 
 
+# Returns the total number of participants in the database
 def db_get_participant_count() -> int:
     conn = get_conn()
     cur = conn.cursor()
@@ -108,6 +114,7 @@ def db_get_participant_count() -> int:
     return n
 
 
+# Returns the number of rows in any given table
 def db_count_rows(table: str) -> int:
     conn = get_conn()
     cur = conn.cursor()
@@ -117,6 +124,7 @@ def db_count_rows(table: str) -> int:
     return n
 
 
+# Returns a sorted list of all participant IDs across all tables
 def db_list_participants() -> list[str]:
     conn = get_conn()
     cur = conn.cursor()
@@ -137,6 +145,7 @@ def db_list_participants() -> list[str]:
     return cleaned
 
 
+# Returns stats for all participants joined across all tables
 def db_get_participant_stats() -> list[dict]:
     conn = get_conn()
     cur = conn.cursor()
@@ -205,6 +214,7 @@ def db_get_participant_stats() -> list[dict]:
     ]
 
 
+# Deletes all data for a single participant across all tables
 def db_delete_participant(participant_id: str) -> dict:
     conn = get_conn()
     cur = conn.cursor()
@@ -231,6 +241,7 @@ def db_delete_participant(participant_id: str) -> dict:
     return {"decisions": d_before, "surveys": s_before, "events": e_before, "participants": p_before}
 
 
+# Deletes all rows from a table and returns the count that was deleted
 def db_clear_table(table: str) -> int:
     conn = get_conn()
     cur = conn.cursor()
@@ -242,6 +253,7 @@ def db_clear_table(table: str) -> int:
     return before
 
 
+# Clears all data from every table at once
 def db_clear_all() -> dict:
     return {
         "participants": db_clear_table("participants"),
